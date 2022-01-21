@@ -42,6 +42,19 @@ def filter_image(img, sigma):
         return img
  
 
+def select_rois_from_image(input_image, positions, roi_size):
+    
+    rois = []
+    half_size = roi_size//2
+    for pos in positions:
+        t = int(pos[0])
+        y = int(pos[1])
+        x = int(pos[2])
+        rois.append(input_image[y-half_size:y+half_size,
+                                x-half_size:x+half_size])
+    return rois
+
+
 def select_rois_from_stack(input_stack, positions, roi_size):
     
     rois = []
@@ -53,19 +66,7 @@ def select_rois_from_stack(input_stack, positions, roi_size):
         rois.append(input_stack[t, y-half_size:y+half_size,
                                    x-half_size:x+half_size])
     return rois
-       
-    
-def select_rois(input_image, positions, roi_size):
-    
-    rois = []
-    half_size = roi_size//2
-    for pos in positions:
-        x = int(pos[0])
-        y = int(pos[1])
-        rois.append(input_image[y-half_size:y+half_size,
-                                x-half_size:x+half_size])
-    return rois
-        
+
     
 def align_with_registration(next_rois, previous_rois, filter_size, roi_size):  
     
@@ -177,7 +178,7 @@ def calculate_spectrum(data):
     return spectra
     
 
-def plot_data(data, xlabel, ylabel, plot_type='lin'):
+def plot_data(data, colors, xlabel, ylabel,  plot_type='lin'):
     '''
     data are organized as a list (time) of list (roi), or as a 2D numpy array
     '''
@@ -197,7 +198,9 @@ def plot_data(data, xlabel, ylabel, plot_type='lin'):
     if plot_type == 'log':
         # data=data+np.mean(data) # in case of log plot, the mean is added to avoid zeros
         ax.set_yscale('log')
-    ax.plot(data, linewidth=linewidth)
+    for cidx, color in enumerate(colors):
+        ax.plot(data[:,cidx], linewidth=linewidth, color = color)
+    ax.plot(data[:,cidx], linewidth=linewidth, color = color)    
     ax.xaxis.set_tick_params(labelsize=char_size*0.75)
     ax.yaxis.set_tick_params(labelsize=char_size*0.75)
     ax.legend(legend, loc='best', frameon = False, fontsize=char_size*0.8)
@@ -223,3 +226,6 @@ def save_in_excel(filename_xls, sheet_name, **kwargs):
         # print(table)
         
     writer.save()
+    
+    
+    

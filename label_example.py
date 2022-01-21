@@ -46,6 +46,7 @@ viewer.add_points(points)
 
 
 props = ['label', 'mean_intensity', 'centroid']
+props = []
 table = regionprops_table(np.asarray(labels).astype(int),
                           intensity_image=np.asarray(image),
                           properties=props)

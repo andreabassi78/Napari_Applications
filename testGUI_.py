@@ -8,29 +8,30 @@ import napari
 import numpy as np
 from napari.layers import Image
 from skimage import data
+from napari.layers.utils.stack_utils import images_to_stack
 
-@magicgui(call_button="process one")
-def process_one(im:Image,index:int)->napari.types.LayerDataTuple:
-    new_image_data = 2* im.data[index,...]
-    print(index)
-    return (new_image_data, {'name': 'MyImage'}, 'image')
 
+
+def process_one(nv: napari.Viewer, plane):
+    return plane
 
 
 @magicgui(call_button="process all")
 def process_all(image: Image):
+    stack = image.data
     
+    viewer.
     
-    
-    for idx in range(3):
-        process_one(image,idx)
+    for plane in stack:
+        processed = process_one(viewer, plane)
+        
  
 
 
 
 
 #viewer = napari.view_image(data.astronaut(), rgb=True)
-
+global viewer
 viewer = napari.Viewer()
 import os
 folder = os.getcwd() + "\\Registration\\images"
@@ -38,4 +39,3 @@ folder = os.getcwd() + "\\Registration\\images"
 viewer.open(folder)
 
 viewer.window.add_dock_widget(process_all, name = 'Platform')
-viewer.window.add_dock_widget(process_one, name = 'Platform')
