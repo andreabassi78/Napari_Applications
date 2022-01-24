@@ -215,6 +215,19 @@ class Psf_widget(QWidget):
             self.viewer.add_image(self.gen.PSF3D,
                          name=self.gen.write_name(),
                          colormap='twilight')
+        self.show_airy_disk()
+        
+    
+    def show_airy_disk(self):
+       deltaR = 2*1.22*self.wavelength.val/self.NA.val/2 # Abbe resolution
+       pos = self.Nxy.val//2
+       self.viewer.add_points([pos, pos], ndim =2, symbol = 'o',
+                    size = deltaR/self.dxy.val,
+                    name=self.gen.write_name('AiryDisk'),
+                    edge_width = 0.1,
+                    face_color = [1,1,1,0],
+                    edge_color = 'red'
+                    )
         
         
     def show_PSF_projections(self): 
@@ -231,13 +244,14 @@ class Psf_widget(QWidget):
             text = 'plane'
             
         imageXZ = self.viewer.add_image(im_xz,
-                     name=f'xz_{text}_{self.gen.write_name()}',
+                     name= self.gen.write_name(f'xz_{text})'),
                      colormap='twilight')
         imageXZ.scale = (self.dz.val/self.dxy.val, 1)
         
         self.viewer.add_image(im_xy,
-                     name=f'xy_{text}_{self.gen.write_name()}',
+                     name=self.gen.write_name(f'xy_{text}'),
                      colormap='twilight')
+        
         
         
         

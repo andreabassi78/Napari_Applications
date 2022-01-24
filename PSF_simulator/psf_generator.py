@@ -179,7 +179,9 @@ class PSF_simulator():
         
     def add_Zernike_aberration(self, N, M, weight):#TODO use correct weight
         # weight of the polynomials in units of lambda (weight 1 means  wavefront abberated of lamba/2)
-        
+        self.N = N
+        self.M = M
+        self.weight = weight
         self.phase += 2* np.pi* weight*nm_polynomial(N, M, 
                                            self.k_rho/self.k_cut_off, 
                                            self.k_theta, normalized = False
@@ -503,16 +505,23 @@ class PSF_simulator():
         tif.imsave(filename+'.tif', psf16, imagej=True, resolution = (1.0/self.dr, 1.0/self.dr),
                     metadata={'spacing': self.dz, 'unit': 'um'})
         
-    def write_name(self):
-        basename = ''
-        name = '_'.join([f'NA_{self.NA}',
-                        f'n_{self.n}'])
+    def write_name(self, basename =''):
+        
+        name = '_'.join([basename,
+                        f'NA_{self.NA:.1f}',
+                        f'n_{self.n:.1f}'])
        
-        if hasattr(self, 'thickness'):
+        if hasattr(self, 'thickness'): # slab abberation is there
             name = '_'.join([name,
-                            f'size_{self.thickness}',
-                            f'alpha_{self.alpha:.2f}',
-                            f'n1_{self.n1}'])
+                            f'size_{self.thickness:.0f}',
+                            f'alpha_{self.alpha:.0f}',
+                            f'n1_{self.n1::.1f}'])
+        
+        if hasattr(self, 'M'): # zernike aberration is there
+            name = '_'.join([name,
+                            f'size_{self.N}',
+                            f'alpha_{self.M}',
+                            f'n1_{self.weight:.1f}'])
         return name
 
 

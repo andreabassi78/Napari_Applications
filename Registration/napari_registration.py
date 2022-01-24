@@ -42,6 +42,15 @@ def get_labels_color(labels_layer):
     colors_values = get_labels_values(labels_layer.data)
     colors = labels_layer.get_color(colors_values)
     return colors
+
+
+
+@magicgui(call_button = "Set optimal contrast")
+def optimize_contrast(image: Image, saturation : float = 1):
+    original = image.data
+    vmax = np.amax(original)
+    vmin = np.amin(original)
+    image.contrast_limits = (int(vmin), int(vmax/saturation))
     
 
 @magicgui(call_button="Subtract background")
@@ -78,10 +87,7 @@ def subtract_background(image: Image,
             print(f'Correcting background on frame {plane_idx}')
             props = regionprops(label_image=mask,
                                 intensity_image=plane)
-            intensities = np.zeros(len(props))
-            for roi_idx, prop in enumerate(props):
-                intensities[roi_idx]=prop['mean_intensity']
-            background = np.mean(intensities)
+            background = props[0]['mean_intensity'] #only one region is defined in mask
             diff = np.clip(plane-background, a_min=0, a_max=AMAX).astype('uint16')
             corrected[plane_idx,:,:] = diff
             yield corrected
@@ -139,10 +145,10 @@ def register_images(image: Image,
         image0 = stack[0,...]
         labels = sum_projection(initial_rois)
         initial_positions = []    
-        props = regionprops(label_image=labels) # intensity_image=image0)
+        props = regionprops(label_image=labels, intensity_image=image0)
         for prop in props:
             t = 0
-            yx=prop['centroid']
+            yx = prop['weighted_centroid']
             initial_positions.append([t, yx[0], yx[1]])
         previous_rois = select_rois_from_image(image0, initial_positions, roi_size)
         time_frames_num, sy, sx = stack.shape
@@ -237,6 +243,7 @@ def process_rois(image: Image,
     roi_num = len(locations) // time_frames_num
     intensities = calculate_intensity(image, roi_num, registered_points, labels, subroi_size)
     yx, deltar, dyx, dr = measure_displacement(image, roi_num, registered_points)
+    
     if correct_photobleaching:
         intensities = correct_decay(intensities)
     spectra = calculate_spectrum(intensities)    
@@ -282,6 +289,8 @@ if __name__ == '__main__':
    
     labels_layer = viewer.add_labels(test_label, name='labels')
 
+    viewer.window.add_dock_widget(optimize_contrast, name = 'Set contrast',
+                                  area='right', add_vertical_stretch=True)
     viewer.window.add_dock_widget(subtract_background, name = 'Subtract background',
                                   area='right', add_vertical_stretch=True)
     viewer.window.add_dock_widget(register_images, name = 'Registration',
