@@ -6,15 +6,18 @@ Created on Sat Jan 22 00:16:58 2022
 """
 from psf_generator import PSF_simulator
 import napari
-from qtpy.QtCore import QTimer
-from qtpy.QtWidgets import QTableWidget, QHBoxLayout, QTableWidgetItem, QWidget, QGridLayout, QPushButton, QFileDialog
+from qtpy.QtCore import Qt, QTimer
+from qtpy.QtWidgets import QTableWidget, QSplitter, QHBoxLayout, QTableWidgetItem, QWidget, QGridLayout, QPushButton, QFileDialog
 from qtpy.QtWidgets import QComboBox, QWidget, QFrame, QLabel, QFormLayout, QVBoxLayout, QPushButton, QSpinBox, QDoubleSpinBox, QCheckBox
 from skimage.measure import regionprops
 from napari.layers import Image, Points, Labels, Shapes
+from napari.qt.threading import thread_worker
+
 import numpy as np
 
 
 class Settings():
+    
     def __init__(self, name ='settings_name',
                  dtype = int,
                  initial_value = 0,
@@ -58,31 +61,98 @@ class Settings():
         if self.write_function is not None:
             sbox.valueChanged.connect(self.write_function)
         settingLayout = QFormLayout()
-        settingLayout.addRow(name, sbox)
+        settingLayout.addRow(QLabel(name), sbox)
         layout.addLayout(settingLayout)
         self.sbox = sbox
         
-
 class Psf_widget(QWidget):
     
-    ABERRATION_DICT = {0:'No aberrations', 1:'Slab', 2:'Zernike'}
+    ABERRATION_DICT = {0:'No aberrations', 1:'Slab aberrations', 2:'Zernike aberrations'}
     
     def __init__(self, viewer:napari.Viewer,
-                 NA:float = 0.5,
-                 n:float = 1.00,
-                 wavelength:float = 0.5320,
-                 Nxy:int = 127,
-                 Nz:int = 63,
-                 dxy:float = 0.10,
-                 dz:float = 0.2
-                                 ):
+                 ):
         self.viewer = viewer
         super().__init__()
-        self.setup_ui() # run setup_ui before instanciating the Settings
-        self.create_Settings(NA, n, wavelength, Nxy, Nz, dxy, dz)
-        self.create_aberration_Settings()
-        self.initialize_simulator()
         
+        self.settings_dict = {'NA':float(0.5),
+                         'n':float(1.00),
+                         'wavelength':float(0.5320),
+                         'Nxy':int(127),
+                         'Nz':int(63),
+                         'dxy':float(0.10),
+                         'dz':float(0.2)
+                         }
+        self.slab_aberrations_dict = {'n1':float(1.51),
+                                      'thickness':float(100.0),
+                                      'alpha':float(0.0),
+                                      }
+                
+        self.zernike_aberrations_dict = {'N':int(3),
+                                         'M':int(1),
+                                         'weight':float(1.0)
+                                         }
+                
+        self.setup_ui() # run setup_ui before instanciating the Settings
+        self.initialize_simulator()
+    
+    def setup_ui(self):     
+        
+        def add_section(_layout,_title):
+            splitter = QSplitter(Qt.Vertical)
+            _layout.addWidget(splitter)
+            _layout.addWidget(QLabel(_title))
+            
+        # initialize layout
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        
+        # add Settings
+        add_section(layout,'Settings')
+        settings_layout = QVBoxLayout()
+        layout.addLayout(settings_layout)
+        self.create_Settings(settings_layout, self.settings_dict)
+        
+        # add plot results checkbox
+        self.plot_checkbox = QCheckBox("Plot PSF profile in Console")
+        self.plot_checkbox.setChecked(False)
+        layout.addWidget(self.plot_checkbox)
+        # add show Airy disk checkbox
+        self.airy_checkbox = QCheckBox("Show Airy disk")
+        self.airy_checkbox.setChecked(True)
+        layout.addWidget(self.airy_checkbox)
+        # add calculate psf button
+        calculate_btn = QPushButton('Calculate PSF')
+        calculate_btn.clicked.connect(self.calculate_psf)
+        layout.addWidget(calculate_btn)
+        
+        # Aberrations
+        add_section(layout,'Aberrations')
+        self.aberration_combo = QComboBox()
+        self.aberration_combo.addItems(list(self.ABERRATION_DICT.values()))
+        self.aberration_combo.currentIndexChanged.connect(self.initialize_simulator)
+        layout.addWidget(self.aberration_combo)
+        
+        # Slab aberrations
+        add_section(layout,'Slab aberrations')
+        slab_layout = QVBoxLayout()
+        layout.addLayout(slab_layout)
+        self.create_Settings(slab_layout, self.slab_aberrations_dict)
+        
+        # Zernike aberrations
+        add_section(layout,'Zernike aberrations')
+        aberration_layout = QVBoxLayout()
+        layout.addLayout(aberration_layout)
+        self.create_Settings(aberration_layout, self.zernike_aberrations_dict) 
+        
+        # Other aberrations ....
+        add_section(layout,'')
+        
+    def create_Settings(self, slayout, s_dict):
+        for key, val in s_dict.items():
+            new_setting = Settings(name=key, dtype=type(val), initial_value=val,
+                                   layout=slayout,
+                                   write_function=self.initialize_simulator)
+            setattr(self, key, new_setting)          
     
     def initialize_simulator(self):
         self.gen = PSF_simulator(self.NA.val, self.n.val, self.wavelength.val,
@@ -91,146 +161,71 @@ class Psf_widget(QWidget):
         
         active_aberration = self.aberration_combo.currentIndex()
         self.add_aberration(active_aberration)
-             
-    
-    def setup_ui(self):     
-        # initialize layout
-        layout = QVBoxLayout()
-        # prepare sub_layout for Settings
-        settings_layout = QVBoxLayout()
-        layout.addLayout(settings_layout)
-        
-        # add plot data checkbox
-        self.plot_checkbox = QCheckBox("Plot PSF profile")
-        self.plot_checkbox.setChecked(False)
-        layout.addWidget(self.plot_checkbox)
-        # add show stack and show MIP checkbox
-        self.stack_checkbox = QCheckBox("Show stack")
-        self.stack_checkbox.setChecked(False)
-        layout.addWidget(self.stack_checkbox)
-        # add show stack and show MIP checkbox
-        self.projections_checkbox = QCheckBox("Show projections")
-        self.projections_checkbox.setChecked(True)
-        layout.addWidget(self.projections_checkbox)
-        self.mip_checkbox = QCheckBox("Show MIP")
-        self.mip_checkbox.setChecked(False)
-        layout.addWidget(self.mip_checkbox)
-        
-        # create reference to layout for the Settings
-        self.settings_layout = settings_layout
-        # Aberrations
-        self.aberration_combo = QComboBox()
-        self.aberration_combo.addItems(list(self.ABERRATION_DICT.values()))
-        self.aberration_combo.currentIndexChanged.connect(self.initialize_simulator)
-        
-        layout.addWidget(self.aberration_combo)
-        aberrations_frame = QFrame()
-        aberrations_frame.setFrameShape(QFrame.StyledPanel)
-        #aberrations_frame.setFrameShadow(QFrame.Plain)
-        #aberrations_frame.setLineWidth(1)
-        #aberrations_frame.setStyleSheet('border-color: rgb(50,50,60); border-style: outset; border-width: 2px,')
-        aberrations_frame.setStyleSheet('background-color: rgb(50,50,60)')
-        aberration_layout = QVBoxLayout(aberrations_frame)
-        layout.addWidget(aberrations_frame)
-        
-        # create reference to aberration layout for the  Settings
-        self.aberration_layout = aberration_layout
-        # add calculate psf button
-        calculate_btn = QPushButton('Calculate PSF')
-        calculate_btn.clicked.connect(self.calculate_psf)
-        layout.addWidget(calculate_btn)
-        # reset_btn = QPushButton('Reset')
-        # reset_btn.clicked.connect(self.initialize_simulator)
-        # layout.addWidget(reset_btn)
-        # activate layout
-        self.setLayout(layout) # QWidget method
-    
-    
-    def create_Settings(self, NA, n, wavelength, Nxy, Nz, dxy, dz):
-        self.NA = Settings(name = 'NA', dtype = float, initial_value= NA,
-                           layout = self.settings_layout,
-                           write_function = self.initialize_simulator)
-        self.n = Settings(name = 'n', dtype = float, initial_value=n,
-                            layout = self.settings_layout,
-                            write_function = self.initialize_simulator)
-        self.wavelength = Settings(name='wavelength', dtype = float, initial_value=wavelength,
-                            layout = self.settings_layout,
-                            write_function = self.initialize_simulator)
-        self.Nxy = Settings(name ='N', dtype = int, initial_value = Nxy, vmin = 1,
-                            layout = self.settings_layout,
-                            write_function = self.initialize_simulator)
-        self.Nxy.sbox.setSingleStep(2) # Nxy must be odd
-        self.Nz = Settings(name ='Nz', dtype = int, initial_value = Nz, vmin = 1,
-                            layout = self.settings_layout,
-                            write_function = self.initialize_simulator)
-        self.Nxy.sbox.setSingleStep(2) # Nz must be odd
-        self.dxy = Settings(name ='dx/dy', dtype = float, initial_value = dxy,
-                            layout = self.settings_layout,
-                            write_function = self.initialize_simulator)
-        self.dz = Settings(name = 'dz', dtype = float, initial_value = dz,
-                            layout = self.settings_layout,
-                            write_function = self.initialize_simulator)
-        
-        
-    def create_aberration_Settings(self):
-        self.n1 = Settings(name = 'n1', dtype = float, initial_value = 1.51, 
-                            layout = self.aberration_layout,
-                            write_function = self.initialize_simulator)
-        self.thickness = Settings(name = 'slab thickness (um)', dtype = float, initial_value= 100.0, 
-                            layout = self.aberration_layout,
-                            write_function = self.initialize_simulator)
-        self.alpha = Settings(name = 'angle (deg)', dtype = float, initial_value= 0.0, 
-                            layout = self.aberration_layout,
-                            write_function = self.initialize_simulator)
-                 
-        self.N = Settings(name = 'N', dtype = int, initial_value = 3,
-                            layout = self.aberration_layout,
-                            write_function = self.initialize_simulator)
-        self.M = Settings(name = 'M', dtype = int, initial_value= 1,
-                            layout = self.aberration_layout,
-                            write_function = self.initialize_simulator)
-        self.weight = Settings(name = 'weight (lambdas)', dtype = float, initial_value= 1.0,
-                            layout = self.aberration_layout,
-                            write_function = self.initialize_simulator)
-                
     
     def add_aberration(self, value):
         if value == 1:
             self.gen.add_slab_scalar(self.n1.val, self.thickness.val, self.alpha.val)
         if value == 2:
             self.gen.add_Zernike_aberration(self.N.val, self.M.val, self.weight.val)
-        
     
     def calculate_psf(self):
-        self.gen.generate_pupil()
-        self.gen.generate_3D_PSF()
         
-        if self.plot_checkbox.checkState():
-            self.gen.plot_psf_profile()
-            
-        if self.projections_checkbox.checkState():
-            self.show_PSF_projections()
-            
-        if self.stack_checkbox.checkState():
-            self.viewer.add_image(self.gen.PSF3D,
-                         name=self.gen.write_name(),
-                         colormap='twilight')
-        self.show_airy_disk()
+        @thread_worker
+        def generator():
+            import warnings
+            warnings.filterwarnings('ignore')
+            self.gen.generate_pupil()
+            self.gen.generate_3D_PSF()
+            return self.gen.PSF3D
         
-    
+        def update_image(psf):
+            
+            self.viewer.add_image(psf,
+                             name=self.gen.write_name('stack'),
+                             colormap='twilight')
+            
+            if self.airy_checkbox.checkState():
+                self.show_airy_disk()
+            
+            if self.plot_checkbox.checkState():
+                self.gen.plot_psf_profile()  
+        
+        worker = generator()  # create "worker" object
+        worker.returned.connect(update_image)  # connect callback functions
+        worker.start()  # start the thread
+        
     def show_airy_disk(self):
-       deltaR = 2*1.22*self.wavelength.val/self.NA.val/2 # Abbe resolution
-       pos = self.Nxy.val//2
-       self.viewer.add_points([pos, pos], ndim =2, symbol = 'o',
-                    size = deltaR/self.dxy.val,
-                    name=self.gen.write_name('AiryDisk'),
-                    edge_width = 0.1,
-                    face_color = [1,1,1,0],
-                    edge_color = 'red'
-                    )
+       deltaR = 1.22*self.wavelength.val/self.NA.val/2 # Abbe resolution
+       deltaZ = self.wavelength.val/self.n.val/(1-np.sqrt(1-self.NA.val**2/self.n.val**2)) # Diffraction limited axial resolution
+       posxy = self.Nxy.val//2
+       posz = self.Nz.val//2
+       center = np.array([posz,posxy,posxy])
+       deltar = deltaR/self.dxy.val
+       deltaz = deltaZ/self.dz.val
+       # create two perpendicular ellipses
+       bbox_yx = np.array([center+np.array([0, deltar, deltar]),
+                           center+np.array([0, deltar,-deltar]),
+                           center+np.array([0,-deltar,-deltar]),
+                           center+np.array([0,-deltar, deltar])]
+                          )
+       bbox_zy = np.array([center+np.array([ deltaz, deltar,0]),
+                           center+np.array([ deltaz,-deltar,0]),
+                           center+np.array([-deltaz,-deltar,0]),
+                           center+np.array([-deltaz, deltar,0])]
+                          )
+       bbox_zx = np.array([center+np.array([ deltaz, 0, deltar]),
+                           center+np.array([ deltaz, 0,-deltar]),
+                           center+np.array([-deltaz, 0,-deltar]),
+                           center+np.array([-deltaz, 0, deltar])]
+                          )
+       ellipses = [bbox_yx, bbox_zy, bbox_zx]
+       shapes_layer = self.viewer.add_shapes(name=self.gen.write_name('AiryDisk'),
+                                              edge_width = 0.5,
+                                              face_color = [1,1,1,0],
+                                              edge_color = 'red')
+       shapes_layer.add_ellipses(ellipses)  
         
-        
-    def show_PSF_projections(self): 
+    def _show_PSF_projections(self): #unused 
         PSF = self.gen.PSF3D
         if self.mip_checkbox.checkState():
             # create maximum intensity projection
@@ -239,7 +234,7 @@ class Psf_widget(QWidget):
             text = 'mip'
         else:
             Nz,Ny,Nx = PSF.shape
-            im_xy = PSF[Nz//2:,:]
+            im_xy = PSF[Nz//2,:,:]
             im_xz = PSF[:,Ny//2,:]
             text = 'plane'
             
@@ -250,10 +245,7 @@ class Psf_widget(QWidget):
         
         self.viewer.add_image(im_xy,
                      name=self.gen.write_name(f'xy_{text}'),
-                     colormap='twilight')
-        
-        
-        
+                     colormap='twilight') 
         
 if __name__ == '__main__':
    

@@ -9,6 +9,7 @@ import numpy as np
 from numpy.fft import fft2, ifftshift, fftshift, fftfreq
 from zernike_polynomials import nm_polynomial
 from SIM_pupil import multiple_gaussians
+from warnings import warn
 
 class PSF_simulator():
     '''
@@ -28,9 +29,12 @@ class PSF_simulator():
         
         '''
         if Nxy % 2 == 0:
-            Nxy +=1 #XY number of pixels must be odd 
+            Nxy +=1 
+            warn('Number of pixels must be odd, value has been changed')
         if Nz % 2 == 0:
              Nz +=1 #XY number of pixels must be odd 
+             warn('Number of voxels must be odd, value has been changed')
+             
         self.NA = NA # Numerical aperture
         self.n = n # refraction index at the object
         self.wavelength = wavelength
@@ -511,17 +515,17 @@ class PSF_simulator():
                         f'NA_{self.NA:.1f}',
                         f'n_{self.n:.1f}'])
        
-        if hasattr(self, 'thickness'): # slab abberation is there
+        if all(hasattr(self, attr) for attr in ["thickness","alpha","n1"]): # slab abberation is there
             name = '_'.join([name,
-                            f'size_{self.thickness:.0f}',
+                            f'thk_{self.thickness:.0f}',
                             f'alpha_{self.alpha:.0f}',
-                            f'n1_{self.n1::.1f}'])
+                            f'n1_{self.n1:.1f}'])
         
-        if hasattr(self, 'M'): # zernike aberration is there
+        if all(hasattr(self, attr) for attr in ["N","M","weight"]): # zernike aberration is there
             name = '_'.join([name,
-                            f'size_{self.N}',
-                            f'alpha_{self.M}',
-                            f'n1_{self.weight:.1f}'])
+                            f'N{self.N}',
+                            f'M_{self.M}',
+                            f'w_{self.weight:.1f}'])
         return name
 
 

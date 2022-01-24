@@ -62,7 +62,7 @@ def subtract_background(image: Image,
     Subtracts a background from each plane of a stack image
     background is calulated as the mean intensity over one or more layers
     '''
-    warnings.filterwarnings('ignore')
+    
     result_name = image.name + '_corrected'
     
     def update_image(new_image):
@@ -76,6 +76,7 @@ def subtract_background(image: Image,
       
     @thread_worker(connect={'yielded': update_image})
     def _subtract_background():
+        warnings.filterwarnings('ignore')
         AMAX=2**16-1
         #check_if_suitable_layer(image, labels, roitype='registration')
         original = np.asarray(image.data)
@@ -127,7 +128,7 @@ def register_images(image: Image,
     
     
     def add_registered_points(centers):
-        warnings.filterwarnings('ignore')
+        #warnings.filterwarnings('ignore')
         for center_idx, center in enumerate(centers):
             registered_points = viewer.layers[points_layer_name]
             registered_points.add(center)
@@ -136,7 +137,7 @@ def register_images(image: Image,
       
     @thread_worker(connect={'yielded': add_registered_points})
     def _register_images():    
-        
+        warnings.filterwarnings('ignore')
         print('Starting registration...')
         stack = np.asarray(image.data)
         normalize = True 
@@ -190,8 +191,8 @@ def calculate_intensity(image:Image,
     st, _sy, _sx = stack.shape
     rois = select_rois_from_stack(stack, locations, roi_size)
     label_rois = select_rois_from_image(labels_data, locations[0:roi_num], roi_size)
-    intensities = np.zeros([st, roi_num])
     
+    intensities = np.zeros([st, roi_num])
     for time_idx in range(st):
         for roi_idx in range(roi_num):
             label_value = label_values[roi_idx]
@@ -200,8 +201,8 @@ def calculate_intensity(image:Image,
             roi = rois[global_idx]
             selected = roi[mask_indexes]
             intensity = np.mean(selected)
-            intensities[time_idx, roi_idx] = intensity  
-    
+            intensities[time_idx, roi_idx] = intensity
+
     return intensities
 
 
