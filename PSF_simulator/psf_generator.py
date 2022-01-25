@@ -30,10 +30,10 @@ class PSF_simulator():
         '''
         if Nxy % 2 == 0:
             Nxy +=1 
-            warn('Number of pixels must be odd, value has been changed')
+            warn(f'Number of pixels Nxy must be odd, changed to {Nxy}')
         if Nz % 2 == 0:
              Nz +=1 #XY number of pixels must be odd 
-             warn('Number of voxels must be odd, value has been changed')
+             warn(f'Number of pixels Nz must be odd, changed to {Nz}')
              
         self.NA = NA # Numerical aperture
         self.n = n # refraction index at the object
@@ -311,11 +311,11 @@ class PSF_simulator():
     def calculateRMS(self):
         '''calculates the RMS wavefron error
         For Zernike abberrations it is the weight of the 
-        rms == 1 indicates 1-wavelength wavefront error 
+        rms == 1 indicates 1-wavelength mean wavefront error 
         '''
         cut_idx = self.k_rho >= self.k_cut_off  
         area = self.ATF0.size - np.sum(cut_idx)
-        phase = self.phase # /(2*np.pi)
+        phase = self.phase # /(2*np.pi) #TODO check notation ofr RMS calculation
         #m = np.zeros_like(phase)
         phase[cut_idx] = 0
         phase = phase[np.isfinite(phase)]
@@ -541,8 +541,8 @@ if __name__ == '__main__':
     n0 = 1.00 # refractive index of the medium
     
     n1 = 1.47 # refractive index of the slab
-    thickness = 170 * um # slab thickness
-    alpha = 0 * deg # angle of the slab relative to the y axis
+    thickness = 50 * um # slab thickness
+    alpha = 1 * deg # angle of the slab relative to the y axis
     
     SaveData = False
     
@@ -565,13 +565,17 @@ if __name__ == '__main__':
     # gen.add_lattice_pupil()
     # gen.add_lightsheet_pupil()
     
-    #gen.add_slab_scalar(n1, thickness, alpha)
+    # gen.add_slab_scalar(n1, thickness, alpha)
     
     # gen.add_slab_vectorial(n1, thickness, alpha)
     gen.add_Zernike_aberration(3, 1, weight=1)
     # gen.add_conical_pupil(0.06*mm)
     
     # gen.add_cylindrical_lens(f_cyl=-40, f=20)
+    
+    # rms = gen.calculateRMS()
+    # print(rms)
+    
     
     gen.generate_pupil()
     gen.generate_3D_PSF()

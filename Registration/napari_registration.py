@@ -19,13 +19,16 @@ from napari.qt.threading import thread_worker
 import warnings
 
 
-def sum_projection(label_layer):
+def max_projection(label_layer):
     '''
-    Compresses a 3D label layer into a 2D array and returns the values
+    Compresses a 3D label layer into a 2D array and returns the values.
+    Selects the label with the highest value in case of overlap.
     '''
     values = np.asarray(label_layer.data).astype(int)
     if values.ndim>2:
-        values = np.sum(values, axis=0)
+        
+        values = np.max(values, axis = 0)
+        
     return(values)
     
 
@@ -38,8 +41,8 @@ def get_labels_values(labels_data):
     return label_values
 
 
-def get_labels_color(labels_layer):
-    colors_values = get_labels_values(labels_layer.data)
+def get_labels_color(labels_data):
+    colors_values = get_labels_values(labels_data)
     colors = labels_layer.get_color(colors_values)
     return colors
 
@@ -80,7 +83,7 @@ def subtract_background(image: Image,
         AMAX=2**16-1
         #check_if_suitable_layer(image, labels, roitype='registration')
         original = np.asarray(image.data)
-        labels_data = sum_projection(labels)
+        labels_data = max_projection(labels)
         mask = np.asarray(labels_data>0).astype(int)
         corrected = np.zeros_like(original)
          
@@ -109,7 +112,8 @@ def register_images(image: Image,
     '''
     points_layer_name = f'registered rois {image.name}'
     # remove registration points if present
-    label_colors = get_labels_color(initial_rois)
+    label_values= max_projection(initial_rois)
+    label_colors = get_labels_color(label_values)
     for layer in viewer.layers:
         if layer.name == points_layer_name:
             viewer.layers.remove(points_layer_name)
@@ -144,7 +148,7 @@ def register_images(image: Image,
         if normalize: # this option is obsolete
             stack, _vmin, _vmax = normalize_stack(stack)
         image0 = stack[0,...]
-        labels = sum_projection(initial_rois)
+        labels = max_projection(initial_rois)
         initial_positions = []    
         props = regionprops(label_image=labels, intensity_image=image0)
         for prop in props:
@@ -184,7 +188,7 @@ def calculate_intensity(image:Image,
     taking into account only the pixels that are in one of the labels of labels_layer
     """
     
-    labels_data = sum_projection(labels_layer)
+    labels_data = max_projection(labels_layer)
     label_values = get_labels_values(labels_data)
     stack = image.data
     locations = points_layer.data
@@ -230,7 +234,7 @@ def measure_displacement(image, roi_num, points):
 @magicgui(call_button="Process registered ROIs")
 def process_rois(image: Image, 
                  registered_points: Points,
-                 labels: Labels,
+                 initial_rois: Labels,
                  correct_photobleaching: bool,
                  subroi_size:int = 100,
                  plot_results:bool = True,
@@ -242,7 +246,9 @@ def process_rois(image: Image,
     time_frames_num, sy, sx = image.data.shape
     locations = registered_points.data
     roi_num = len(locations) // time_frames_num
-    intensities = calculate_intensity(image, roi_num, registered_points, labels, subroi_size)
+    intensities = calculate_intensity(image, roi_num, 
+                                      registered_points,
+                                      initial_rois, subroi_size)
     yx, deltar, dyx, dr = measure_displacement(image, roi_num, registered_points)
     
     if correct_photobleaching:
@@ -250,7 +256,8 @@ def process_rois(image: Image,
     spectra = calculate_spectrum(intensities)    
         
     if plot_results:
-        colors = get_labels_color(labels)
+        label_values = max_projection(initial_rois)
+        colors = get_labels_color(label_values)
         plot_data(deltar, colors, "time index", "lenght (px)")
         plot_data(intensities, colors, "time index", "mean intensity")
         plot_data(spectra, colors, "frequency index", "power spectrum", plot_type = 'log')

@@ -17,6 +17,18 @@ import numpy as np
 
 
 class Settings():
+    ''' 
+    Auxilliary class to create an object with a corresponding Qwidget,
+    and update its value as a property (self.val)-
+    - name of the QWidget (it contain a label)
+    - dtype: Currently supported for int and float 
+    - initial_value: stored in the @property self.val
+    - vmin, vmax: min and max values of the QWidget
+    - layout: parent Qlayout    
+    - read function: not implemented
+    - write_function is executed on value change of the QWidget
+    
+    '''
     
     def __init__(self, name ='settings_name',
                  dtype = int,
@@ -181,7 +193,7 @@ class Psf_widget(QWidget):
         def update_image(psf):
             
             self.viewer.add_image(psf,
-                             name=self.gen.write_name('stack'),
+                             name=self.gen.write_name(basename = 'stack'),
                              colormap='twilight')
             
             if self.airy_checkbox.checkState():
@@ -219,7 +231,7 @@ class Psf_widget(QWidget):
                            center+np.array([-deltaz, 0, deltar])]
                           )
        ellipses = [bbox_yx, bbox_zy, bbox_zx]
-       shapes_layer = self.viewer.add_shapes(name=self.gen.write_name('AiryDisk'),
+       shapes_layer = self.viewer.add_shapes(name=self.gen.write_name(basename ='AiryDisk'),
                                               edge_width = 0.5,
                                               face_color = [1,1,1,0],
                                               edge_color = 'red')
@@ -239,12 +251,12 @@ class Psf_widget(QWidget):
             text = 'plane'
             
         imageXZ = self.viewer.add_image(im_xz,
-                     name= self.gen.write_name(f'xz_{text})'),
+                     name= self.gen.write_name(basename =f'xz_{text})'),
                      colormap='twilight')
         imageXZ.scale = (self.dz.val/self.dxy.val, 1)
         
         self.viewer.add_image(im_xy,
-                     name=self.gen.write_name(f'xy_{text}'),
+                     name=self.gen.write_name(basename = f'xy_{text}'),
                      colormap='twilight') 
         
 if __name__ == '__main__':
