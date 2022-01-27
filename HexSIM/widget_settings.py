@@ -28,6 +28,8 @@ class Settings():
                  vmin = 0,
                  vmax = 2**16-1,
                  spinbox_decimals=3,
+                 spinbox_step=0.1,
+                 unit = '',
                  layout = None,
                  write_function = None,
                  read_function = None):
@@ -35,18 +37,23 @@ class Settings():
         self.name= name
         self._val = initial
         self.spinbox_decimals = spinbox_decimals
+        self.spinbox_step = spinbox_step
+        self.unit = unit
         self.write_function = write_function
-        self.read_function = read_function
+        # self.read_function = read_function
         self.create_spin_box(layout, dtype, vmin, vmax)
+        
+    def __repr__(self):
+        return f'{self.name} : {self._val}'
         
     @property    
     def val(self):
-        self._val = self.sbox.value()
+        self._val = self.get_func()
         return self._val 
     
     @val.setter 
     def val(self, new_val):
-        self.sbox.setValue(new_val)
+        self.set_func(new_val)
         self._val = new_val
         
     def create_spin_box(self, layout, dtype, vmin, vmax):
@@ -56,18 +63,31 @@ class Settings():
             sbox = QSpinBox()
             sbox.setMaximum(vmax)
             sbox.setMinimum(vmin)
+            self.set_func = sbox.setValue
+            self.get_func = sbox.value
+            change_func = sbox.valueChanged
         elif dtype == float:
             sbox = QDoubleSpinBox()
             sbox.setDecimals(self.spinbox_decimals)
-            sbox.setSingleStep(0.1)
-            sbox.setMaximum(2**16-1)
+            sbox.setSingleStep(self.spinbox_step)
+            sbox.setMaximum(vmax)
+            sbox.setMinimum(vmin)
+            self.set_func = sbox.setValue
+            self.get_func = sbox.value
+            change_func = sbox.valueChanged
+        elif dtype == bool:
+            sbox = QCheckBox()
+            self.set_func = sbox.setChecked
+            self.get_func = sbox.checkState
+            change_func = sbox.stateChanged
         
         else: raise(TypeError, 'Specified setting type not supported')
-        sbox.setValue(val)
-        if self.write_function is not None:
-            sbox.valueChanged.connect(self.write_function)
+        
+        self.set_func(val)
+        if self.write_function :
+            change_func.connect(self.write_function)
         settingLayout = QFormLayout()
-        settingLayout.addRow(QLabel(name), sbox)
+        settingLayout.addRow(sbox, QLabel(name))
         layout.addLayout(settingLayout)
         self.sbox = sbox
 
@@ -85,15 +105,3 @@ def add_timer(function):
         return result
     inner.__name__ = function.__name__
     return inner 
-
-    
-def add_update_display(function):
-    """Function decorator to to update display at the end of the execution
-    To avoid conflicts with QtObjects, it assumes that the method takes no arguments except self 
-    """ 
-    def inner(cls):
-        result = function(cls)
-        cls.update_display()
-        return result
-    inner.__name__ = function.__name__
-    return inner  

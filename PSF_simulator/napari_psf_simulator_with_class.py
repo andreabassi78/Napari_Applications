@@ -230,13 +230,18 @@ class Psf_widget(QWidget):
                            center+np.array([-deltaz, 0,-deltar]),
                            center+np.array([-deltaz, 0, deltar])]
                           )
-       ellipses = [bbox_yx, bbox_zy, bbox_zx]
+       
+       if (self.dz.val*self.Nz.val)/2 > deltaZ:
+           ellipses = [bbox_yx, bbox_zy, bbox_zx]
+       else:
+           ellipses = [bbox_yx]
        shapes_layer = self.viewer.add_shapes(name=self.gen.write_name(basename ='AiryDisk'),
                                               edge_width = 0.5,
                                               face_color = [1,1,1,0],
                                               edge_color = 'red')
        shapes_layer.add_ellipses(ellipses)  
-        
+       viewer.dims.current_step = (posz,0,0)
+       
     def _show_PSF_projections(self): #unused 
         PSF = self.gen.PSF3D
         if self.mip_checkbox.checkState():
