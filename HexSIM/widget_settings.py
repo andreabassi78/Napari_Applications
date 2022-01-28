@@ -28,7 +28,7 @@ class Settings():
                  vmin = 0,
                  vmax = 2**16-1,
                  spinbox_decimals=3,
-                 spinbox_step=0.1,
+                 spinbox_step=0.05,
                  unit = '',
                  layout = None,
                  write_function = None,
@@ -36,6 +36,7 @@ class Settings():
         
         self.name= name
         self._val = initial
+        self.dtype = dtype
         self.spinbox_decimals = spinbox_decimals
         self.spinbox_step = spinbox_step
         self.unit = unit
@@ -49,7 +50,7 @@ class Settings():
     @property    
     def val(self):
         self._val = self.get_func()
-        return self._val 
+        return self.dtype(self._val) 
     
     @val.setter 
     def val(self, new_val):

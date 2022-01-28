@@ -5,24 +5,14 @@ Created on Tue Jan 25 16:34:41 2022
 @author: Andrea Bassi @Polimi
 """
 import napari
-from qtpy.QtCore import Qt, QTimer
+
 from qtpy.QtWidgets import QTableWidget, QSplitter, QHBoxLayout, QTableWidgetItem, QWidget, QGridLayout, QPushButton, QFileDialog
 from qtpy.QtWidgets import QComboBox, QWidget, QFrame, QLabel, QFormLayout, QVBoxLayout, QPushButton, QSpinBox, QDoubleSpinBox, QCheckBox
 from skimage.measure import regionprops
 from napari.layers import Image, Points, Labels, Shapes
-from napari.qt.threading import thread_worker
-import json
-import os
-import time
-from datetime import datetime
-from pathlib import Path
 import numpy as np
-import tifffile as tif
 from numpy.fft import ifft2, fft2, fftshift
-# from PyQt5.QtWidgets import QFileDialog, QTableWidgetItem
 from qtpy.QtWidgets import QFileDialog, QTableWidgetItem   
-# from ScopeFoundry import Measurement
-# from ScopeFoundry.helper_funcs import sibling_path, load_qt_ui_file
 
 from hexSimProcessor import HexSimProcessor
 from simProcessor import SimProcessor 
@@ -30,6 +20,7 @@ from image_decorr import ImageDecorr
 from magicgui import magicgui
 from widget_settings import Settings, add_timer
 import warnings
+import pathlib
 
 class HexSimAnalysis(QWidget):
     
@@ -42,11 +33,12 @@ class HexSimAnalysis(QWidget):
         
         self.setup_ui() # run setup_ui before instanciating the Settings
         self.start_sim_processor()
-        viewer.dims.events.current_step.connect(self.select_index)
+        self.viewer.dims.events.current_step.connect(self.select_index)
         
     def setup_ui(self):     
         
         def add_section(_layout,_title):
+            from qtpy.QtCore import Qt
             splitter = QSplitter(Qt.Vertical)
             _layout.addWidget(splitter)
             _layout.addWidget(QLabel(_title))
@@ -74,16 +66,10 @@ class HexSimAnalysis(QWidget):
                               write_function = self.reset_processor)
         self.debug = Settings('debug', dtype=bool, initial=False, layout=slayout,
                           write_function = self.setReconstructor) 
-        self.cleanup = Settings('cleanup', dtype=bool, initial=False, layout=slayout, 
-                          write_function = self.setReconstructor) 
         self.gpu = Settings('gpu', dtype=bool, initial=False, layout=slayout, 
                           write_function = self.setReconstructor) 
         self.compact = Settings('compact', dtype=bool, initial=False, layout=slayout, 
                           write_function = self.setReconstructor) 
-        self.axial = Settings('axial', dtype=bool, initial=False, layout=slayout, 
-                          write_function = self.setReconstructor) 
-        self.usemodulation = Settings('usemodulation', dtype=bool, initial=True,
-                                      layout=slayout, write_function = self.setReconstructor)
         self.magnification = Settings('M', dtype=float, initial=63, unit = 'X',  
                                       layout=slayout, write_function = self.setReconstructor)
         self.NA = Settings('NA', dtype=float, initial=1.00, layout=slayout, 
@@ -96,60 +82,64 @@ class HexSimAnalysis(QWidget):
         self.pixelsize = Settings('pixelsize', dtype=float, initial=6.50, layout=slayout,
                                   spinbox_decimals=2, unit = 'um',
                                   write_function = self.setReconstructor)
-        self.alpha = Settings('alpha', dtype=float, initial=0.500,  spinbox_decimals=3, 
+        self.dz = Settings('dz', dtype=float, initial=0.25, layout=slayout,
+                                  spinbox_decimals=2, unit = 'um',
+                                  write_function = self.rescale)
+        self.alpha = Settings('alpha', dtype=float, initial=0.350,  spinbox_decimals=2, 
                               layout=slayout, write_function = self.setReconstructor)
-        self.beta = Settings('beta', dtype=float, initial=0.950, 
+        self.beta = Settings('beta', dtype=float, initial=0.980, spinbox_step=0.01, 
                              layout=slayout,  spinbox_decimals=3,
                              write_function = self.setReconstructor)
         self.w = Settings('w', dtype=float, initial=2.00, layout=slayout,
                               spinbox_decimals=2,
                               write_function = self.setReconstructor)
         self.eta = Settings('eta', dtype=float, initial=0.4,
-                            layout=slayout, spinbox_decimals=2, spinbox_step=0.01,
+                            layout=slayout, spinbox_decimals=3, spinbox_step=0.05,
                             write_function = self.setReconstructor)
-        
         self.use_phases = Settings('use_phases', dtype=bool, initial=True, layout=slayout,                         
                                    write_function = self.setReconstructor)
         self.find_carrier = Settings('Find Carrier', dtype=bool, initial=True,
                                      layout=slayout, 
                                      write_function = self.setReconstructor)
-        # self.selectROI = Settings('selectROI', dtype=bool,
-        #                           initial=False, layout=slayout) 
-        # self.roiX = Settings('roiX', dtype=int,
-        #                      initial=600,  layout=slayout)
-        # self.roiY = Settings('roiY', dtype=int,
-        #                      initial=1200,  layout=slayout)
-        # self.ROI_size = Settings('ROI_size', dtype=int, initial=512,
-        #                          vmin=1, vmax=2048, layout=slayout) 
-        # self.dataset_index = Settings('dataset_index', dtype = int, initial=0, vmin = 0,
-        #                             layout=slayout, write_function = self.set_dataset)
-        self.frame_index = Settings('frame', dtype = int, initial=55, vmin = 0,
+        self.cleanup = Settings('cleanup', dtype=bool, initial=True, layout=slayout, 
+                          write_function = self.setReconstructor)
+        self.usemodulation = Settings('usemodulation', dtype=bool, initial=False,
+                                      layout=slayout, write_function = self.setReconstructor)
+        self.axial = Settings('axial', dtype=bool, initial=False, layout=slayout, 
+                          write_function = self.setReconstructor) 
+        self.frame_index = Settings('frame', dtype = int, initial=0, vmin = 0,
                                     layout=slayout)
-        
-    
+
+
     def create_Buttons(self,blayout):    
         
-        self.showWF = Settings('Show WF', dtype=bool, initial=False,
-                                     layout=blayout, 
-                                     )
         self.showXcorr = Settings('Show Xcorr', dtype=bool, initial=False,
-                                     layout=blayout, 
+                                     layout=blayout,
+                                     write_function = self.setReconstructor
                                      )
-        self.showSpectrum = Settings('Show Spectrum', dtype=bool, initial=True,
-                                     layout=blayout, 
+        self.showSpectrum = Settings('Show Spectrum', dtype=bool, initial=False,
+                                     layout=blayout,
+                                     write_function = self.setReconstructor
+                                     )
+        self.showCarrier = Settings('Show Carrier', dtype=bool, initial=True,
+                                     layout=blayout,
+                                     write_function = self.setReconstructor
                                      )
         
         self.keep_calibrating = Settings('Continuos Calibration', dtype=bool, initial=False,
                                      layout=blayout, 
                                      write_function = self.setReconstructor)
-        
+        self.keep_reconstructing = Settings('Continuos Reconstruction', dtype=bool, initial=False,
+                                     layout=blayout, 
+                                     write_function = self.setReconstructor)
         buttons_dict = {'Reset': self.reset_processor,
-                        'Load calibration': self.loadCalibrationResults,
+                        'Widefield': self.calculate_WF_image,
                         'Calibrate': self.calibration,
                         'Plot calibration phases':self.find_phaseshifts,
                         'SIM reconstruction': self.standard_reconstruction,
-                        'Stack SIM reconstruction': self.batch_recontruction,
+                        'Stack SIM reconstruction': self.stack_reconstruction,
                         'Stack demodulation': self.stack_demodulation,
+                        #'Rescale': self.rescale,
                         'Resolution estimation':self.estimate_resolution}
 
         for button_name, call_function in buttons_dict.items():
@@ -158,52 +148,109 @@ class HexSimAnalysis(QWidget):
             blayout.addWidget(button) 
             
     
-    def show_image(self, image_values, basename, name='', scale = 1):
+    def open_h5_dataset(self, path: pathlib.Path = "test.h5",
+                        dataset:int = 0 )->Image:
+                
+        # open file
+        from get_h5_data import get_h5_dataset, get_multiple_h5_datasets, get_h5_attr, get_datasets_index_by_name, get_group_name
+        import os
+        directory, filename = os.path.split(path)
+        t_idx = f'/t{dataset:04d}/'
+        index_list, names = get_datasets_index_by_name(path, t_idx)
+        stack,found = get_multiple_h5_datasets(path, index_list)
+        sp,sz,sy,sx = stack.shape
+        if sp != 3 and sp != 7:  
+            print(f'\nUnable to open dataset {dataset}.\n')
+            raise(ValueError)
+        else:
+            print(f'\nCorrectly opened dataset {dataset}/{(found//sp)-1} \
+                         \nwith {sp} phases and {sz} images')
         
-        fullname = basename + '_' + name 
+        #updates settings
+        measurement_names,_ = get_group_name(path, 'measurement')
+        measurement_name = measurement_names[0]
+        for key in ['magnification','n','NA','pixelsize','wavelength']:
+            val = get_h5_attr(path, key, group = measurement_name) # Checks if the key is in the Scopefoundry measurement settings
+            if len(val)>0 and hasattr(self,key):
+                new_value = val[0]
+                setattr(getattr(self,key), 'val', new_value)
+                print(f'Updated {key} to: {new_value} ')    
+        
+        return Image(stack, name = f'dts{dataset}_{filename}') 
+      
+    
+    
+    def show_image(self, image_values, fullname, **kwargs):
         try:
             self.viewer.layers[fullname].data = image_values
         except:
-            self.viewer.add_image(image_values, name = fullname, scale = [scale]*image_values.ndim)
-        
+            if 'scale' in kwargs.keys():    
+                scale = kwargs['scale']
+            else:
+                scale = [1.]*image_values.ndim
+            self.viewer.add_image(image_values, name = fullname, scale = scale)
             
+                 
     def select_layer(self, image: Image):
-        #selected_layer = list(viewer.layers.selection)[0]
         if hasattr(image,'data'): 
             self.imageRaw_name = image.name
             self.imageRaw = image.data
+            sp,sz,sy,sx = image.data.shape
+            assert sy == sx, 'Non-square image shape is not supported'
+            self.viewer.dims.current_step = (0,sz//2, sy//2, sx//2)
+            self.rescale()
+            if not hasattr(self, 'h'): 
+                self.start_sim_processor()
+                
             
-    def select_index(self,val):
-        self.frame_index.val = int(viewer.dims.current_step[1])
-        self.calculate_WF_image()
-        self.calculate_spectrum() # calculates the power spectrum of imageRaw in one of its phasse images
-        self.calculate_xcorr() 
+    def rescale(self):
+        self.zscaling = self.dz.val /(self.pixelsize.val/self.magnification.val)
+        self.viewer.layers[self.imageRaw_name].scale = [1,self.zscaling,1,1]
+            
+    def select_index(self, val = 0):
+        self.frame_index.val = int(self.viewer.dims.current_step[1])
+        self.check_checkboxes()
         if self.keep_calibrating.val:
             self.calibration()
+        if self.keep_reconstructing.val:
+            self.standard_reconstruction()
+    
+    def check_checkboxes(self):
+        if self.showXcorr.val:
+            self.calculate_xcorr()
+        if self.showSpectrum.val:
+            self.calculate_spectrum()
+        if self.showCarrier.val:
+            self.plot_carrier()
+
     
     def get_current_image(self):
         if hasattr(self, 'imageRaw'):    
             return self.imageRaw[:,self.frame_index.val,...]
     
-    def start_sim_processor(self):
+    def start_sim_processor(self):     
         self.isCalibrated = False
-        self.kx_input = np.zeros((3, 1), dtype=np.single)
-        self.ky_input = np.zeros((3, 1), dtype=np.single)
-        self.p_input = np.zeros((3, 1), dtype=np.single)
-        self.ampl_input = np.zeros((3, 1), dtype=np.single)
         
         if hasattr(self, 'h'):
-            self.reset()
+            self.stop_sim_processor()
             self.start_sim_processor()
         else:
             if self.phases_number.val == 7: 
                 self.h = HexSimProcessor()  # create reconstruction object
                 self.h.opencv = False
-                self.setReconstructor()        
+                self.setReconstructor() 
+                self.kx_input = np.zeros((3, 1), dtype=np.single)
+                self.ky_input = np.zeros((3, 1), dtype=np.single)
+                self.p_input = np.zeros((3, 1), dtype=np.single)
+                self.ampl_input = np.zeros((3, 1), dtype=np.single)
             elif self.phases_number.val == 3:
                 self.h = SimProcessor()  # create reconstruction object
                 self.h.opencv = False
-                self.setReconstructor()           
+                self.setReconstructor() 
+                self.kx_input = np.single(0.0)
+                self.ky_input = np.single(0.0)
+                self.p_input = np.single(0.0)
+                self.ampl_input = np.single(0.0)
             else: 
                 raise(ValueError("Invalid number of phases"))
             
@@ -215,30 +262,55 @@ class HexSimAnalysis(QWidget):
         self.isCalibrated = False
         self.stop_sim_processor()
         self.start_sim_processor()
-        
-                
+           
+    def setReconstructor(self,*args):
+        self.h.usePhases = self.use_phases.val
+        self.h.debug = self.debug.val
+        self.h.cleanup = self.cleanup.val
+        self.h.axial = self.axial.val
+        self.h.usemodulation = self.usemodulation.val
+        self.h.magnification = self.magnification.val
+        self.h.NA = self.NA.val
+        self.h.n = self.n.val
+        self.h.wavelength = self.wavelength.val
+        self.h.pixelsize = self.pixelsize.val
+        self.h.alpha = self.alpha.val
+        self.h.beta = self.beta.val
+        self.h.w = self.w.val
+        self.h.eta = self.eta.val
+        self.select_index()
+        if not self.find_carrier.val:
+            self.h.kx = self.kx_input
+            self.h.ky = self.ky_input
+        if self.keep_calibrating.val:
+            self.calibration()
+        if self.keep_reconstructing.val:
+            self.standard_reconstruction()
+                 
     def calculate_WF_image(self):
-        if self.showWF.val:
-            img = self.get_current_image()
-            imageWF = np.mean(img, axis=0)
-            self.show_image(imageWF, 'WF' , self.imageRaw_name)
+        if hasattr(self, 'imageRaw'):
+            imageWF = np.mean(self.imageRaw, axis=0)
+            imname = 'WF_' + self.imageRaw_name
+            self.show_image(imageWF, imname, scale = [self.zscaling,1,1])
+            self.imageWF = imageWF
         
     def calculate_spectrum(self):
         """
         Calculates power spectrum of the image
         """
-        if self.showSpectrum.val:
-            phase_index = int(viewer.dims.current_step[0])
+        if hasattr(self, 'imageRaw') and self.showSpectrum.val == True:
+            phase_index = int(self.viewer.dims.current_step[0])
             img = self.get_current_image()[phase_index,...]
             epsilon = 1e-6
             ps = np.log((np.abs(fftshift(fft2(img))))**2+epsilon)
-            self.show_image(ps, 'Spectrum' , self.imageRaw_name)
+            imname = 'Spectrum_' + self.imageRaw_name
+            self.show_image(ps, imname)
             
     def calculate_xcorr(self):
         """
         Calculates the crosscorrelation of the low and high pass filtered version of the raw image
         """
-        if self.showXcorr.val:
+        if hasattr(self, 'imageRaw') and self.showXcorr.val == True:
             img = self.get_current_image()
             N = len(img[0, ...])
             _kr, _dk = self.calculate_kr(N)
@@ -261,9 +333,9 @@ class HexSimAnalysis(QWidget):
             ix = band0_common * band1
             ixf = np.abs(fftshift(fft2(fftshift(ix))))
             pyc0, pxc0 = self.h._findPeak(ixf )
-            #self.add_point( (pyc0, pxc0), 'in calculate carrier' )
-            self.show_image(ixf,  'Xcorr' , self.imageRaw_name)
-            #self.plot_carrier()
+            imname = 'Xcorr_' + self.imageRaw_name
+            self.show_image(ixf, imname)
+            
      
     def calculate_kr(self,N):       
         _dx = self.h.pixelsize / self.h.magnification  # Sampling in image plane
@@ -277,7 +349,7 @@ class HexSimAnalysis(QWidget):
       
     def plot_carrier(self): 
         
-        if self.isCalibrated:
+        if self.showCarrier.val and self.isCalibrated:
             kxs = self.h.kx
             kys = self.h.ky
             N = self.h.N
@@ -311,27 +383,32 @@ class HexSimAnalysis(QWidget):
                 demodulated[frame_index,:,:] += 2/p * hyperstack[p_idx,frame_index,:,:]*np.exp(1j*2*np.pi*p_idx/p)
         demodulated_abs = np.abs(demodulated).astype('float') 
         self.imageDem = demodulated_abs
-        self.show_image(demodulated_abs, 'Demodulated', self.imageRaw_name)
+        imname = 'Demodulated_' + self.imageRaw_name
+        scale = [self.zscaling,1,1]
+        self.show_image(demodulated_abs, imname, scale = scale)
           
-    #@add_timer
+        
     def calibration(self):  
         if hasattr(self, 'h') and hasattr(self, 'imageRaw'):
-            # self.setReconstructor()
+            
             selected_imRaw = self.get_current_image()
+            # fidx = self.frame_index.val
+            # selected_imRaw = np.mean(self.imageRaw[:,fidx:fidx+10,:,:], axis = 1)
+            
             if self.gpu.val:
                 self.h.calibrate_cupy(selected_imRaw, self.find_carrier.val)       
             else:
                 self.h.calibrate(selected_imRaw,self.find_carrier.val)          
             self.isCalibrated = True
-            self.plot_carrier()
-            if self.showXcorr.val:
-                self.calculate_xcorr()
-            if self.showSpectrum.val:
-                self.calculate_spectrum()
+            self.check_checkboxes()
+            if self.find_carrier.val: # store the value found   
+                self.kx_input = self.h.kx  
+                self.ky_input = self.h.ky
+                self.p_input = self.h.p
+                self.ampl_input = self.h.ampl
              
-    @add_timer  
-    def standard_reconstruction(self):
-        
+    
+    def standard_reconstruction(self):  
         current_imageRaw = self.get_current_image()
         if self.isCalibrated:
                 
@@ -342,13 +419,46 @@ class HexSimAnalysis(QWidget):
                 imageSIM = self.h.reconstruct_rfftw(current_imageRaw)
             
             self.imageSIM = imageSIM
-            self.show_image(imageSIM,'SIM',self.imageRaw_name, scale = 0.5)
+            imname = 'SIM_' + self.imageRaw_name
+            self.show_image(imageSIM, imname, scale = [0.5,0.5])
         else:
             warnings.warn('SIM processor not calibrated')
-          
-    #@add_timer    
+              
+            
+    def stack_reconstruction(self):
+        from napari.qt.threading import thread_worker
+        
+        def update_sim_image(stack):
+            imname = 'SIMstack_' + self.imageRaw_name
+            self.show_image(stack, imname, scale = [self.zscaling,0.5,0.5])
+            self.imageSIM = stack
+            sz,sy,sx = stack.shape
+            self.viewer.dims.current_step = (sz//2,sy//2,sx//2) #centered in the 3 projections
+        
+        @thread_worker(connect={'returned': update_sim_image})
+        def _stack_reconstruction():
+            import warnings
+            warnings.filterwarnings('ignore')
+            hyperstack = self.imageRaw
+            sp,sz,sy,sx = hyperstack.shape
+            stackSIM = np.zeros([sz,2*sy,2*sx], dtype=np.single)
+            for zidx in range(sz):
+                phases_stack = hyperstack[:,zidx,:,:]
+                if self.keep_calibrating.val:
+                    self.h.calibrate(phases_stack, self.find_carrier.val)   
+                stackSIM[zidx,:,:] = self.h.reconstruct_rfftw(phases_stack)
+            return stackSIM
+        
+        if not self.isCalibrated:
+            warnings.warn('SIM processor not calibrated')
+            return
+        else:
+            _stack_reconstruction()
+        
+        
+    @add_timer    
     def batch_recontruction(self): # TODO fix this reconstruction with  multiple batches (multiple planes)
-        self.setReconstructor()
+
         if self.isCalibrated:
             # Batch reconstruction
             if self.gpu.val:
@@ -362,99 +472,65 @@ class HexSimAnalysis(QWidget):
                     imageSIM = self.h.batchreconstructcompact(self.imageRaw)
                 elif not self.compact.val:
                     imageSIM = self.h.batchreconstruct(self.imageRaw)
-            
-        elif not self.isCalibrated:
-            nStack = len(self.imageRaw)
-            # calibrate & reconstruction
-            if self.gpu.val:
-                self.h.calibrate_cupy(self.imageRaw[int(nStack // 2):int(nStack // 2 + 7), :, :], self.isFindCarrier)
-                self.isCalibrated = True
-                
-                if self.compact.val:
-                    imageSIM = self.h.batchreconstructcompact_cupy(self.imageRaw)
-                elif not self.compact.val:
-                    imageSIM = self.h.batchreconstruct_cupy(self.imageRaw)
-                
-
-            elif not self.gpu.val:
-                self.h.calibrate(self.imageRaw[int(nStack // 2):int(nStack // 2 + 7), :, :], self.isFindCarrier)
-                self.isCalibrated = True
-                
-                if self.compact.val:
-                    imageSIM = self.h.batchreconstructcompact(self.imageRaw)
-                elif not self.compact.val:
-                    imageSIM = self.h.batchreconstruct(self.imageRaw)
+                    
         self.imageSIM = imageSIM
-        self.show_image(imageSIM,'SIM',self.imageRaw_name, scale = 0.5)
-
+        imname = 'SIM_' + self.imageRaw_name
+        scale = [self.zscaling, 0.5, 0.5]
+        simlayer =self.show_image(imageSIM, imname, scale = scale)
         
-    def setReconstructor(self,*args):
-        
-        self.h.usePhases = self.use_phases.val
-        self.h.debug = self.debug.val
-        self.h.cleanup = self.cleanup.val
-        self.h.axial = self.axial.val
-        self.h.usemodulation = self.usemodulation.val
-        self.h.magnification = self.magnification.val
-        self.h.NA = self.NA.val
-        self.h.n = self.n.val
-        self.h.wavelength = self.wavelength.val
-        self.h.pixelsize = self.pixelsize.val
-        self.h.alpha = self.alpha.val
-        self.h.beta = self.beta.val
-        self.h.w = self.w.val
-        self.h.eta = self.eta.val
-        if not self.find_carrier.val:
-            self.h.kx = self.kx_input
-            self.h.ky = self.ky_input
-        self.calibration()
-        
-
-    @add_timer   
     def estimate_resolution(self): #TODO : consider to add QT timers
+        from napari.qt.threading import thread_worker
+        
+        @thread_worker
+        def _estimate_resolution():
+            import warnings
+            warnings.filterwarnings('ignore')
             pixelsizeWF = self.h.pixelsize / self.h.magnification
-            ciWF = ImageDecorr(self.imageWF, square_crop=True,pixel_size=pixelsizeWF)
+            imWF = self.imageWF[self.frame_index.val, ...]
+            ciWF = ImageDecorr(imWF, square_crop=True, pixel_size=pixelsizeWF)
             optimWF, resWF = ciWF.compute_resolution()
-            ciSIM = ImageDecorr(self.imageSIM, square_crop=True,pixel_size=pixelsizeWF/2)
+            if self.imageSIM.ndim >2:
+                imsim = self.imageSIM[self.frame_index.val, ...]
+            else:
+                imsim = self.imageSIM
+            ciSIM = ImageDecorr(imsim, square_crop=True,pixel_size=pixelsizeWF/2)
             optimSIM, resSIM = ciSIM.compute_resolution()
             txtDisplay = f"Wide field image resolution:\t {ciWF.resolution:.3f} um \
-                  \nSIM image resolution:\t {ciSIM.resolution:.3f} um\n"
-            self.show_text(txtDisplay)
-        
-    def loadCalibrationResults(self):
-        try:
-            filename, _ = QFileDialog.getOpenFileName(caption="Open file", directory=self.app.settings['save_dir'], filter="Text files (*.txt)")
-            file = open(filename,'r')
-            loadResults = json.loads(file.read())
-            self.kx_input = np.asarray(loadResults["kx"])
-            self.ky_input = np.asarray(loadResults["ky"])
-            self.show_text("Calibration results are loaded.")
-        except:
-            self.show_text("Calibration results are not loaded.")
-            
-    def find_phaseshifts(self):       
-        if self.phases_number.val == 7:
-            self.find_7phaseshifts()
-        if self.phases_number.val == 3:
-            self.find_3phaseshifts()
+                        \nSIM image resolution:\t {ciSIM.resolution:.3f} um\n"
+            print(txtDisplay)
+        worker = _estimate_resolution()  # create "worker" object
+        #worker.returned.connect(update_image)  # connect callback functions
+        worker.start()
+          
+    def find_phaseshifts(self):
+        if self.isCalibrated:
+            if self.phases_number.val == 7:
+                self.find_7phaseshifts()
+            if self.phases_number.val == 3:
+                self.find_3phaseshifts()
+            self.showCalibrationTable() 
+        else:
+            warnings.warn(' Processor not calibrated, unable to show phases')
         
     
     def find_7phaseshifts(self):    
-        self.phaseshift = np.zeros((4,7))
-        self.expected_phase = np.zeros((4,7))
+        phaseshift = np.zeros((4,7))
+        expected_phase = np.zeros((4,7))
         frame_index = self.frame_index.val
     
         for i in range (3):
             phase, _ = self.h.find_phase(self.h.kx[i],self.h.ky[i],self.imageRaw[:,frame_index,:,:])
-            self.expected_phase[i,:] = np.arange(7) * 2*(i+1) * np.pi / 7
-            self.phaseshift[i,:] = np.unwrap(phase - self.expected_phase[i,:]) + self.expected_phase[i,:] - phase[0]
+            expected_phase[i,:] = np.arange(7) * 2*(i+1) * np.pi / 7
+            phaseshift[i,:] = np.unwrap(phase - expected_phase[i,:]) + expected_phase[i,:] - phase[0]
     
-        self.phaseshift[3] = self.phaseshift[2]-self.phaseshift[1]-self.phaseshift[0]
-        
-        self.phasesPlot.clear()
-        for idx in range(len(self.phaseshift)):
-            self.plot(self.phaseshift[idx])
-            self.plot(self.expected_phase[idx])
+        phaseshift[3] = phaseshift[2]-phaseshift[1]-phaseshift[0]
+        data_list = []
+        for idx in range(len(phaseshift)):
+            data_list.append([expected_phase[idx],phaseshift[idx]])
+        data_to_plot = np.array(data_list)    
+        symbols = ['.','o']
+        legend = ['expected', 'measured']
+        self.plot_with_plt(data_to_plot, legend, symbols)
             
     def find_3phaseshifts(self):
         frame_index = self.frame_index.val
@@ -465,16 +541,14 @@ class HexSimAnalysis(QWidget):
         data_to_plot = np.array([expected_phase, phaseshift, error])
         symbols = ['.','o','|']
         legend = ['expected', 'measured', 'error']
-        self.plot(data_to_plot, legend, symbols)
-        self.show_text(f"\nExpected phases: {expected_phase}\
+        self.plot_with_plt(data_to_plot, legend, symbols)
+        print(f"\nExpected phases: {expected_phase}\
                          \nMeasured phases: {phaseshift}\
                          \nError          : {error}\n")
     
-    def plot(self, data, legend, symbols):
+    def plot_with_plt(self, data, legend, symbols):
         import matplotlib.pyplot as plt
-        data = np.array(data)
         char_size = 10
-        
         plt.rc('font', family='calibri', size=char_size)
         fig = plt.figure(figsize=(4,3), dpi=150)
         ax = fig.add_subplot(111)
@@ -483,7 +557,6 @@ class HexSimAnalysis(QWidget):
         # ax.set_title(title, size=char_size)   
         ax.set_xlabel('step', size=char_size)
         ax.set_ylabel('phase', size=char_size)
-        
         for cidx,column in enumerate(data):
             marker= symbols[cidx]
             linewidth = 0 if marker == 'o' else 0.8
@@ -492,110 +565,36 @@ class HexSimAnalysis(QWidget):
         ax.yaxis.set_tick_params(labelsize=char_size*0.75)
         ax.legend(legend, loc='best', frameon = False, fontsize=char_size*0.8)
         ax.grid(True, which='major', axis='both', alpha=0.2)
-        ph_num = self.phases_number.val
-        
-        ticks = np.linspace(0, 2*np.pi*(ph_num-1)/ph_num, 2*ph_num-1 )
-        
+        vales_num = data.shape[1]
+        ticks = np.linspace(0, 2*np.pi*(vales_num-1)/vales_num, 2*vales_num-1 )
         ax.set_yticks(ticks)
         fig.tight_layout()
         plt.show()
         plt.rcParams.update(plt.rcParamsDefault)
-
     
-    def show_text(self, text):
-        print(text)    
-        
     def showCalibrationTable(self):
-        if self.phases_number.val == 3:
-            self.show3CalibrationTable()
-        elif self.phases_number.val == 7:
-            self.show7CalibrationTable()
-    
-    def show3CalibrationTable(self,tlayout):
-        def table_item(element):
-            return QTableWidgetItem(str(element).lstrip('[').rstrip(']'))
-        
-        table = QTableWidget()
-        table.setColumnCount(2)
-        table.setRowCount(6)
-        tlayout.addLayout(table)
-        table.setItem(0, 0, table_item('[kx_in]')) 
-        table.setItem(0, 1, table_item(self.kx_input[0]))
-        
-        table.setItem(1, 0, table_item('[ky_in]'))              
-        table.setItem(1, 1, table_item(self.ky_input[0]))
-        
-        table.setItem(2, 0, table_item('[kx]'))             
-        table.setItem(2, 1, table_item(self.h.kx))
-        
-        #
-        table.setItem(3, 0, table_item('[ky]'))              
-        table.setItem(3, 1, table_item(self.h.ky))
-        
-        #
-        table.setItem(4, 0, table_item('[phase]'))  
-        table.setItem(4, 1, table_item(self.h.p))
-        
-        #
-        table.setItem(5, 0, table_item('[amplitude]'))  
-        table.setItem(5, 1, table_item(self.h.ampl))
-          
-    
-    def show7CalibrationTable(self, tlayout):
-        def table_item(element):
-            return QTableWidgetItem(str(element).lstrip('[').rstrip(']'))
-        
-        table = QTableWidget()
-        table.setColumnCount(4)
-        table.setRowCount(6)
-        tlayout.addLayout(table)
-        
-        table.setItem(0, 0, table_item('[kx_in]'))
-        table.setItem(0, 1, table_item(self.kx_input[0])) 
-        table.setItem(0, 2, table_item(self.kx_input[1]))
-        table.setItem(0, 3, table_item(self.kx_input[2]))
-        
-        table.setItem(1, 0, table_item('[ky_in]'))             
-        table.setItem(1, 1, table_item(self.ky_input[0]))
-        table.setItem(1, 2, table_item(self.ky_input[1]))
-        table.setItem(1, 3, table_item(self.ky_input[2]))
+        import pandas as pd
+        headers= ['kx_in','ky_in','kx','ky','phase','amplitude']
+        vals = [self.kx_input, self.ky_input,
+                self.h.kx, self.h.ky,
+                self.h.p,self.h.ampl]
 
-        table.setItem(2, 0, table_item('[kx]'))             
-        table.setItem(2, 1, table_item(self.h.kx[0]))
-        table.setItem(2, 2, table_item(self.h.kx[1]))
-        table.setItem(2, 3, table_item(self.h.kx[2]))
-        #
-        table.setItem(3, 0, table_item('[ky]'))              
-        table.setItem(3, 1, table_item(self.h.ky[0]))
-        table.setItem(3, 2, table_item(self.h.ky[1]))
-        table.setItem(3, 3, table_item(self.h.ky[2]))
-        #
-        table.setItem(4, 0, table_item('[phase]'))  
-        table.setItem(4, 1, table_item(self.h.p[0]))
-        table.setItem(4, 2, table_item(self.h.p[1]))
-        table.setItem(4, 3, table_item(self.h.p[2]))
-        #
-        table.setItem(5, 0, table_item('[amplitude]'))  
-        table.setItem(5, 1, table_item(self.h.ampl[0]))
-        table.setItem(5, 2, table_item(self.h.ampl[1]))
-        table.setItem(5, 3, table_item(self.h.ampl[2]))      
-
-
-class NumpyEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return json.JSONEncoder.default(self, obj)
+        table = pd.DataFrame([vals] , columns = headers )
+        print(table)
 
        
 if __name__ == '__main__':
-    file = 'testSIM.tif'
+    file = 'test.tif'
     viewer = napari.Viewer()
     viewer.open(file)
     widget = HexSimAnalysis(viewer)
     gui = magicgui(widget.select_layer, auto_call=True)
+    h5_opener = magicgui(widget.open_h5_dataset, call_button='Open h5 dataset')
+    viewer.window.add_dock_widget((h5_opener,gui),
+                                  name = 'H5 file selection',
+                                  add_vertical_stretch = True)
     viewer.window.add_dock_widget(gui,
-                                  name = 'Image selection',
+                                  name = 'Image layer selection',
                                   add_vertical_stretch = True)
     viewer.window.add_dock_widget(widget,
                                   name = 'HexSim analyzer @Polimi',

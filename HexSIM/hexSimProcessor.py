@@ -90,6 +90,7 @@ class HexSimProcessor:
             self._bigimgstoreU = cv2.UMat(self._bigimgstore)
             self._imgstoreU = [cv2.UMat((self.N, self.N), s=0.0, type=cv2.CV_32F) for i in range(7)]
         self._lastN = self.N
+        
 
     def calibrate(self, img, findCarrier=True):
         self._calibrate(img, findCarrier, useCupy = False)
@@ -153,6 +154,7 @@ class HexSimProcessor:
                 else:
                     self.kx[i], self.ky[i] = self._coarseFindCarrier(sum_prepared_comp[0, :, :],
                                                             sum_prepared_comp[i + 1, :, :], mask1)
+            
         for i in range(0, 3):
             if useCupy:
                 ckx[i], cky[i], p[i], ampl[i] = self._refineCarrier_cupy(sum_prepared_comp[0, :, :],
@@ -169,6 +171,7 @@ class HexSimProcessor:
         self.ampl = ampl
 
         if self.debug:
+            print('after refining')
             print(f'kx = {ckx[0]}, {ckx[1]}, {ckx[2]}')
             print(f'ky = {cky[0]}, {cky[1]}, {cky[2]}')
             print(f'p  = {p[0]}, {p[1]}, {p[2]}')
@@ -205,14 +208,10 @@ class HexSimProcessor:
                                                                         np.exp(1j * ph * ckx[2] * xx)).real)
 
         # calculate pre-filter factors
-
         mask2 = (self._kr < 2)
-
         self._prefilter = np.single((self._tfm(self._kr, mask2) * self._attm(self._kr, mask2)))
         self._prefilter = fft.fftshift(self._prefilter)
-
         mtot = np.full((2 * self.N, 2 * self.N), False)
-
         th = np.linspace(0, 2 * pi, 360, dtype=np.single)
         inv = np.geterr()['invalid']
         kmaxth = 2

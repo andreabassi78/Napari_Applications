@@ -109,6 +109,12 @@ class SimProcessor(HexSimProcessor):
         for k in range(0, 2):
             for l in range(0, 3):
                 sum_prepared_comp[k, :, :] = sum_prepared_comp[k, :, :] + imgs[l, :, :] * M[k, l]
+        
+        if self.debug:
+            print('before find carrier')
+            print(f'kx = {self.kx}')
+            print(f'ky = {self.kx}')
+
 
         if findCarrier:
             # minimum search radius in k-space
@@ -119,10 +125,18 @@ class SimProcessor(HexSimProcessor):
             else:
                 self.kx, self.ky = self._coarseFindCarrier(sum_prepared_comp[0, :, :],
                                                            sum_prepared_comp[1, :, :], mask1)
+        
+            
+            if self.debug:
+                print('before refine')
+                print(f'kx = {self.kx}')
+                print(f'ky = {self.kx}')
 
+
+        # TODO all the following moved into if findCarrier  @AB
         if useCupy:
             ckx, cky, p, ampl = self._refineCarrier_cupy(sum_prepared_comp[0, :, :],
-                                                         sum_prepared_comp[1, :, :], self.kx, self.ky)
+                                                          sum_prepared_comp[1, :, :], self.kx, self.ky)
         else:
             ckx, cky, p, ampl = self._refineCarrier(sum_prepared_comp[0, :, :],
                                                     sum_prepared_comp[1, :, :], self.kx, self.ky)
@@ -131,8 +145,9 @@ class SimProcessor(HexSimProcessor):
         self.ky = cky
         self.p = p
         self.ampl = ampl
-
+    
         if self.debug:
+            print('after refine')
             print(f'kx = {ckx}')
             print(f'ky = {cky}')
             print(f'p  = {p}')
@@ -164,6 +179,7 @@ class SimProcessor(HexSimProcessor):
             self.ampl = ampl
 
             if self.debug:
+                print('after use phase')
                 print(f'kx = {ckx}')
                 print(f'ky = {cky}')
                 print(f'p  = {p}')
@@ -175,9 +191,14 @@ class SimProcessor(HexSimProcessor):
         yy = xx
 
         if self.usemodulation:
-            A = ampl
+            A = self.ampl # TODO added to eclude findCarrier @AB
         else:
             A = 1
+            
+        p = self.p # TODO added to eclude findCarrier @AB
+        ckx = self.kx 
+        cky = self.ky 
+        
 
         if self.usePhases:
             if useCupy:

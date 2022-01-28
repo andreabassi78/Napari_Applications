@@ -130,14 +130,17 @@ def register_images(image: Image,
                  name = points_layer_name)
     viewer.layers.append(empty_point)
     
-    
-    def add_registered_points(centers):
+    def add_registered_points(params):
+        centers=params[0]
+        idx=params[1]
         #warnings.filterwarnings('ignore')
         for center_idx, center in enumerate(centers):
             registered_points = viewer.layers[points_layer_name]
             registered_points.add(center)
             registered_points.current_properties = {'color_idx': f'{center_idx}'}
-            
+        
+        
+        viewer.dims.current_step = (idx,0,0)
       
     @thread_worker(connect={'yielded': add_registered_points})
     def _register_images():    
@@ -159,7 +162,7 @@ def register_images(image: Image,
         time_frames_num, sy, sx = stack.shape
         next_positions = initial_positions.copy()
         for t_index in range(0, time_frames_num, 1):
-            yield(next_positions)
+            yield((next_positions,t_index))
             print(f'registering frame {t_index} of {time_frames_num-1}')
             next_rois = select_rois_from_image(stack[t_index,...], next_positions, roi_size)
             # registration based on opencv function
