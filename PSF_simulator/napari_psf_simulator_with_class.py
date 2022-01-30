@@ -104,7 +104,7 @@ class Psf_widget(QWidget):
                                          'weight':float(1.0)
                                          }
                 
-        self.setup_ui() # run setup_ui before instanciating the Settings
+        self.setup_ui() 
         self.initialize_simulator()
     
     def setup_ui(self):     
@@ -207,14 +207,14 @@ class Psf_widget(QWidget):
         worker.start()  # start the thread
         
     def show_airy_disk(self):
-       deltaR = 1.22*self.wavelength.val/self.NA.val/2 # Abbe resolution
+       deltaR = 1.22*self.wavelength.val/self.NA.val/2 # Rayleigh resolution
        deltaZ = self.wavelength.val/self.n.val/(1-np.sqrt(1-self.NA.val**2/self.n.val**2)) # Diffraction limited axial resolution
        posxy = self.Nxy.val//2
        posz = self.Nz.val//2
        center = np.array([posz,posxy,posxy])
        deltar = deltaR/self.dxy.val
        deltaz = deltaZ/self.dz.val
-       # create two perpendicular ellipses
+       # create three perpendicular ellipses
        bbox_yx = np.array([center+np.array([0, deltar, deltar]),
                            center+np.array([0, deltar,-deltar]),
                            center+np.array([0,-deltar,-deltar]),
@@ -240,7 +240,7 @@ class Psf_widget(QWidget):
                                               face_color = [1,1,1,0],
                                               edge_color = 'red')
        shapes_layer.add_ellipses(ellipses)  
-       viewer.dims.current_step = (posz,0,0)
+       viewer.dims.current_step = (posz,posxy,posxy) # shows the image center of the stack in 3D
        
     def _show_PSF_projections(self): #unused 
         PSF = self.gen.PSF3D

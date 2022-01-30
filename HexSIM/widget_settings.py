@@ -46,6 +46,7 @@ class Settings():
         
     def __repr__(self):
         return f'{self.name} : {self._val}'
+    
         
     @property    
     def val(self):
@@ -54,6 +55,7 @@ class Settings():
     
     @val.setter 
     def val(self, new_val):
+        new_val = self.dtype(new_val)
         self.set_func(new_val)
         self._val = new_val
         
