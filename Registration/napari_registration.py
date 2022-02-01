@@ -5,7 +5,7 @@ Created on Fri Jan 14 10:35:46 2022
 @author: Andrea Bassi, Giorgia Tortora @Polimi
 """
 
-from registration_utils import plot_data, save_in_excel, normalize_stack, select_rois_from_stack, select_rois_from_image
+from registration_utils import plot_data, save_in_excel, normalize_stack, select_rois_from_stack, select_rois_from_image, select_rois_with_bbox
 from registration_utils import align_with_registration, update_position
 from registration_utils import calculate_spectrum, correct_decay 
 import numpy as np
@@ -98,12 +98,47 @@ def subtract_background(image: Image,
     
     _subtract_background()
 
+
+def get_rois_props(label_data):
+    centroids = []  
+    roi_sizes_x = []
+    roi_sizes_y = []
+    props = regionprops(label_image=label_data)#, intensity_image=image0)
+    for prop in props:
+        t = 0
+        yx = prop['centroid']
+        bbox = prop['bbox']
+        _sizey = int(np.abs(bbox[0]-bbox[2]))
+        _sizex = int(np.abs(bbox[1]-bbox[3]))  
+        centroids.append([t, yx[0], yx[1]])
+        roi_sizes_y.append(_sizey)
+        roi_sizes_x.append(_sizex)
+    return centroids, roi_sizes_y, roi_sizes_x   
+
+def create_rectangle(center, sy, sx, color):
+    cz=center[0]
+    cy=center[1]
+    cx=center[2]
+    hsx = sx//2
+    hsy = sy//2
+    rectangle = [ [cz, cy+hsy, cx-hsx], # up-left
+                  [cz, cy+hsy, cx+hsx], # up-right
+                  [cz, cy-hsy, cx+hsx], # down-right
+                  [cz, cy-hsy, cx-hsx]  # down-left
+                  ]
+    try :
+        viewer.layers['rectangles'].add_rectangles(np.array(rectangle), edge_color=color)
+    except:    
+        viewer.add_shapes(np.array(rectangle),
+                          edge_width=2,
+                          edge_color=color,
+                          face_color=[1,1,1,0],
+                          name = 'rectangles'
+                          )
     
-@magicgui(call_button="Register ROIs",
-          roi_size = {'min':2})
+@magicgui(call_button="Register ROIs")
 def register_images(image: Image,
                     initial_rois: Labels,
-                    roi_size: int = 100, 
                     median_filter_size:int = 3,
                     ):
     '''
@@ -118,28 +153,25 @@ def register_images(image: Image,
         if layer.name == points_layer_name:
             viewer.layers.remove(points_layer_name)
     # initialize registration points layer with properties
-    point_properties = {'color_idx': '0'}
     empty_point = Points([], ndim=image.data.ndim,
-                 size = roi_size,
-                 edge_width = roi_size//30+1, opacity = 1,
-                 symbol = 'square',
-                 properties = point_properties,
-                 face_color = [1,1,1,0],
-                 edge_color = 'color_idx',
-                 edge_color_cycle = label_colors,
+                 size = 2,
+                 edge_color = 'red',
+                 face_color = 'red', #[1,1,1,0],
                  name = points_layer_name)
     viewer.layers.append(empty_point)
     
     def add_registered_points(params):
-        centers=params[0]
-        idx=params[1]
+        centers = params[0]
+        roisy = params[1]
+        roisx = params[2]
+        idx = params[3]
         #warnings.filterwarnings('ignore')
         for center_idx, center in enumerate(centers):
             registered_points = viewer.layers[points_layer_name]
             registered_points.add(center)
-            registered_points.current_properties = {'color_idx': f'{center_idx}'}
-        
-        
+            create_rectangle(center, 
+                              roisy[center_idx], roisx[center_idx],
+                              label_colors[center_idx])
         viewer.dims.current_step = (idx,0,0)
       
     @thread_worker(connect={'yielded': add_registered_points})
@@ -152,25 +184,21 @@ def register_images(image: Image,
             stack, _vmin, _vmax = normalize_stack(stack)
         image0 = stack[0,...]
         labels = max_projection(initial_rois)
-        initial_positions = []    
-        props = regionprops(label_image=labels, intensity_image=image0)
-        for prop in props:
-            t = 0
-            yx = prop['weighted_centroid']
-            initial_positions.append([t, yx[0], yx[1]])
-        previous_rois = select_rois_from_image(image0, initial_positions, roi_size)
-        time_frames_num, sy, sx = stack.shape
+             
+        initial_positions, sy, sx = get_rois_props(labels)   
+         
+        previous_rois = select_rois_from_image(image0, initial_positions, sy,sx)
+        time_frames_num, _, _ = stack.shape
         next_positions = initial_positions.copy()
         for t_index in range(0, time_frames_num, 1):
-            yield((next_positions,t_index))
+            yield( (next_positions, sy, sx, t_index) )
             print(f'registering frame {t_index} of {time_frames_num-1}')
-            next_rois = select_rois_from_image(stack[t_index,...], next_positions, roi_size)
+            next_rois = select_rois_from_image(stack[t_index,...], next_positions, sy,sx)
             # registration based on opencv function
-            aligned, original, dx, dy = align_with_registration(next_rois,
-                                                                previous_rois,
-                                                                median_filter_size,
-                                                                roi_size
-                                                                )
+            dx, dy = align_with_registration(next_rois,
+                                                previous_rois,
+                                                median_filter_size
+                                                )
             next_positions = update_position(next_positions,
                                              dz = 1,
                                              dx_list = dx,
@@ -196,8 +224,9 @@ def calculate_intensity(image:Image,
     stack = image.data
     locations = points_layer.data
     st, _sy, _sx = stack.shape
-    rois = select_rois_from_stack(stack, locations, roi_size)
-    label_rois = select_rois_from_image(labels_data, locations[0:roi_num], roi_size)
+    _ , roi_sizey, roi_sizex = get_rois_props(labels_data)   
+    rois = select_rois_from_stack(stack, locations, roi_sizey, roi_sizex)
+    label_rois = select_rois_from_image(labels_data, locations[0:roi_num], roi_sizey,roi_sizex)
     
     intensities = np.zeros([st, roi_num])
     for time_idx in range(st):
@@ -311,3 +340,12 @@ if __name__ == '__main__':
     warnings.filterwarnings('ignore')
     
     napari.run() 
+    
+    
+    
+    #bbox = label_props[idx]['bbox']
+    #image_data[bbox[0]:bbox[2],bbox[1]:bbox[3]]
+    
+    
+    
+    

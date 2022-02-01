@@ -26,7 +26,7 @@ def create_rectangle(center, sidey, sidex):
     
 # add the image
 viewer = napari.view_image(data.camera(), name='photographer')
-rect = create_rectangle([0,100,100],60,80)
+rect = create_rectangle([0,200,100],60,80)
 # add the polygons
 shapes_layer = viewer.add_shapes(rect, edge_width=2,
                           edge_color='green', face_color='white',)

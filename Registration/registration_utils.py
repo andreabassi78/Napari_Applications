@@ -40,42 +40,54 @@ def filter_image(img, sigma):
         return filtered
     else:
         return img
- 
 
-def select_rois_from_image(input_image, positions, roi_size):
+def select_rois_with_bbox(im, bboxes):
+    rois = []
+    for bbox in bboxes:
+        rois.append(im[bbox[0]:bbox[2],bbox[1]:bbox[3]])
+    return rois    
+
+
+def select_rois_from_image(input_image, positions, sizesy, sizesx):
     
     rois = []
-    half_size = roi_size//2
-    for pos in positions:
-        t = int(pos[0])
+    
+    for pos,sizey,sizex in zip(positions,sizesy,sizesx):
+        #t = int(pos[0])
         y = int(pos[1])
         x = int(pos[2])
-        rois.append(input_image[y-half_size:y+half_size,
-                                x-half_size:x+half_size])
+        half_sizey = sizey//2
+        half_sizex = sizex//2
+        rois.append(input_image[y-half_sizey:y+half_sizey,
+                                x-half_sizex:x+half_sizex])
     return rois
 
 
-def select_rois_from_stack(input_stack, positions, roi_size):
+def select_rois_from_stack(input_stack, positions, sizesy, sizesx):
     
     rois = []
-    half_size = roi_size//2
-    for pos in positions:
+    #num_pos =len(positions)
+    num_rois =len(sizesy)
+    
+    for pos_idx,pos in enumerate(positions):
+        sizey = sizesy[pos_idx%num_rois]
+        sizex = sizesx[pos_idx%num_rois]
         t = int(pos[0]) 
         y = int(pos[1])
         x = int(pos[2])
-        rois.append(input_stack[t, y-half_size:y+half_size,
-                                   x-half_size:x+half_size])
+        half_sizey = sizey//2
+        half_sizex = sizex//2
+        rois.append(input_stack[t, y-half_sizey:y+half_sizey,
+                                   x-half_sizex:x+half_sizex])
     return rois
 
     
-def align_with_registration(next_rois, previous_rois, filter_size, roi_size):  
+def align_with_registration(next_rois, previous_rois, filter_size):  
     
     original_rois = []
     aligned_rois = []
     dx_list = []
     dy_list = []
-    
-    half_size = roi_size//2
     
     warp_mode = cv2.MOTION_TRANSLATION 
     number_of_iterations = 5000
@@ -96,27 +108,18 @@ def align_with_registration(next_rois, previous_rois, filter_size, roi_size):
             _, warp_matrix = cv2.findTransformECC (previous_roi, next_roi,
                                                       warp_matrix, warp_mode, criteria)
             
-            next_roi_aligned = cv2.warpAffine(next_roi, warp_matrix, (sx,sy),
-                                           flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP)
+            # next_roi_aligned = cv2.warpAffine(next_roi, warp_matrix, (sx,sy),
+            #                                flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP)
         except:
-            next_roi_aligned = next_roi
-        
-        original_roi = previous_roi[sy//2-half_size:sy//2+half_size,
-                                        sx//2-half_size:sx//2+half_size ]
-        
-        aligned_roi =  next_roi_aligned[sy//2-half_size:sy//2+half_size,
-                                        sx//2-half_size:sx//2+half_size ]
-    
-        original_rois.append(original_roi)
-        aligned_rois.append(aligned_roi)
-        
+            print('frame not registered')
+         
         dx = warp_matrix[0,2]
         dy = warp_matrix[1,2]
         
         dx_list.append(dx)
         dy_list.append(dy)
     
-    return aligned_rois, original_rois, dx_list, dy_list
+    return dx_list, dy_list
 
 
 def update_position(pos_list, dz, dx_list, dy_list ):
