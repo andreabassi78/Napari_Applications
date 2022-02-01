@@ -63,12 +63,7 @@ class HexSimAnalysis(QWidget):
         
         self.phases_number = Settings('phases', dtype=int, initial=3, layout=slayout, 
                               write_function = self.reset_processor)
-        self.debug = Settings('debug', dtype=bool, initial=False, layout=slayout,
-                          write_function = self.setReconstructor) 
-        self.gpu = Settings('gpu', dtype=bool, initial=False, layout=slayout, 
-                          write_function = self.setReconstructor) 
-        self.compact = Settings('compact', dtype=bool, initial=False, layout=slayout, 
-                          write_function = self.setReconstructor) 
+        
         self.magnification = Settings('M', dtype=float, initial=63, unit = 'X',  
                                       layout=slayout, write_function = self.setReconstructor)
         self.NA = Settings('NA', dtype=float, initial=1.00, layout=slayout, 
@@ -138,6 +133,13 @@ class HexSimAnalysis(QWidget):
         self.batch = Settings('Batch Reconstruction', dtype=bool, initial=False,
                                      layout=blayout, 
                                      write_function = self.setReconstructor)
+        self.debug = Settings('debug', dtype=bool, initial=False, layout=blayout,
+                          write_function = self.setReconstructor) 
+        self.gpu = Settings('gpu', dtype=bool, initial=False, layout=blayout, 
+                          write_function = self.setReconstructor) 
+        self.compact = Settings('compact', dtype=bool, initial=False, layout=blayout, 
+                          write_function = self.setReconstructor) 
+        
         buttons_dict = {'Reset': self.reset_processor,
                         'Widefield': self.calculate_WF_image,
                         'Calibrate': self.calibration,
@@ -156,7 +158,7 @@ class HexSimAnalysis(QWidget):
     def open_h5_dataset(self, path: pathlib.Path = MYPATH,
                         dataset:int = 50 ):
         # open file
-        from get_h5_data import get_h5_dataset, get_multiple_h5_datasets, get_h5_attr, get_datasets_index_by_name, get_group_name
+        from get_h5_data import get_multiple_h5_datasets, get_h5_attr, get_datasets_index_by_name, get_group_name
         import os
         directory, filename = os.path.split(path)
         t_idx = f'/t{dataset:04d}/'
@@ -181,19 +183,24 @@ class HexSimAnalysis(QWidget):
         # imagelayer = Image(stack, name = f'dts{dataset}_{filename}') 
         sp,sz,sy,sx = stack.shape
         assert sy == sx, 'Non-square images are not supported'
-        self.imageRaw = self.show_image(stack, fullname = f'dts{dataset}_{filename}')
+        fullname = f'dts{dataset}_{filename}'
+        im_layer = self.show_image(stack, fullname=fullname)
         self.rescaleZ()
+        self.center_image(im_layer)
        
             
     def select_layer(self, image: Image):
-        if image.data.ndim == 4: 
-            self.imageRaw = image
+        
+        if image.data.ndim == 4:
+            self.imageRaw_name = image.name
             sp,sz,sy,sx = image.data.shape
             assert sy == sx, 'Non-square images are not supported'
             #self.viewer.dims.current_step = (0,sz//2, sy//2, sx//2)
             self.rescaleZ()
+            self.center_image(image)
             if not hasattr(self, 'h'): 
                 self.start_sim_processor()
+            print(f'Selected image layer: {image.name}')
            
             
     def rescaleZ(self):
@@ -205,24 +212,24 @@ class HexSimAnalysis(QWidget):
                     scale = layer.scale 
                     scale[-3] = self.zscaling
                     layer.scale = scale
-                
-                    # show central frame in the three projections
-                    s = layer.data.shape
-                    current_step = [0]*layer.ndim
-                    current_step[-3] = s[-3]//2
-                    current_step[-2] = s[-2]//2
-                    current_step[-1] = s[-1]//2
                     
-                    self.viewer.dims.current_step = current_step
-                    
+    def center_image(self, layer):
+        s = layer.data.shape
+        current_step = [si//2 for si in s]
+        self.viewer.dims.current_step = current_step
+        
            
     def select_index(self, val = 0):
-        self.frame_index.val = int(self.viewer.dims.current_step[1])
-        self.check_checkboxes()
-        if self.keep_calibrating.val:
-            self.calibration()
-        if self.keep_reconstructing.val:
-            self.standard_reconstruction()
+        try:
+            if viewer.dims.ndim >2:
+                self.frame_index.val = int(self.viewer.dims.current_step[-3])
+            self.check_checkboxes()
+            if self.keep_calibrating.val:
+                self.calibration()
+            if self.keep_reconstructing.val:
+                self.standard_reconstruction()
+        except Exception as e:
+                     print(e)
     
     
     def check_checkboxes(self):
@@ -245,17 +252,24 @@ class HexSimAnalysis(QWidget):
             self.viewer.layers[fullname].data = image_values
             self.viewer.layers[fullname].scale = scale
         
-        else:    
-            imlayer = self.viewer.add_image(image_values,
+        else:  
+            layer = self.viewer.add_image(image_values,
                                             name = fullname,
                                             scale = scale,
                                             interpolation = 'bilinear')
-            return imlayer
+            return layer
+    
+    def get_imageRaw(self):
+        try:
+            return self.viewer.layers[self.imageRaw_name].data
+        except:
+             raise(KeyError('Please select a valid 4D image (phase,z,y,x)'))
     
     
     def get_current_image(self):
-        if hasattr(self, 'imageRaw'):    
-            return self.imageRaw.data[:,self.frame_index.val,...]
+
+        data = self.get_imageRaw()
+        return data[:,self.frame_index.val,...]
     
     
     def start_sim_processor(self):     
@@ -329,12 +343,12 @@ class HexSimAnalysis(QWidget):
         """
         Calculates power spectrum of the image
         """
-        if hasattr(self, 'imageRaw') and self.showSpectrum.val == True:
+        if self.showSpectrum.val:
             phase_index = int(self.viewer.dims.current_step[0])
             img = self.get_current_image()[phase_index,...]
             epsilon = 1e-6
             ps = np.log((np.abs(fftshift(fft2(img))))**2+epsilon)
-            imname = 'Spectrum_' + self.imageRaw.name
+            imname = 'Spectrum_' + self.imageRaw_name
             self.show_image(ps, imname, hold = True)
             
             
@@ -342,7 +356,7 @@ class HexSimAnalysis(QWidget):
         """
         Calculates the crosscorrelation of the low and high pass filtered version of the raw image
         """
-        if hasattr(self, 'imageRaw') and self.showXcorr.val == True:
+        if self.showXcorr.val == True:
             img = self.get_current_image()
             N = len(img[0, ...])
             _kr, _dk = self.calculate_kr(N)
@@ -365,7 +379,7 @@ class HexSimAnalysis(QWidget):
             ix = band0_common * band1
             ixf = np.abs(fftshift(fft2(fftshift(ix))))
             pyc0, pxc0 = self.h._findPeak(ixf )
-            imname = 'Xcorr_' + self.imageRaw.name
+            imname = 'Xcorr_' + self.imageRaw_name
             self.show_image(ixf, imname, hold = True)
             
      
@@ -398,7 +412,7 @@ class HexSimAnalysis(QWidget):
     
     def add_point(self, location, name = '', color = 'green'):
         radius = 10
-        fullname = f'Carrier_{self.imageRaw.name}_{name}'
+        fullname = f'Carrier_{self.imageRaw_name}_{name}'
         try:
             self.viewer.layers[fullname].data = location
         except:
@@ -407,37 +421,34 @@ class HexSimAnalysis(QWidget):
                               edge_width=0.5, edge_color=color) 
             
      
-    @add_timer
     def stack_demodulation(self): 
-        hyperstack = self.imageRaw.data
+        hyperstack = self.get_imageRaw()
         p,z,y,x = hyperstack.shape
         demodulated = np.zeros([z,y,x]).astype('complex64')
         for frame_index in range(z): 
             for p_idx in range(p):
                 demodulated[frame_index,:,:] += 2/p * hyperstack[p_idx,frame_index,:,:]*np.exp(1j*2*np.pi*p_idx/p)
         demodulated_abs = np.abs(demodulated).astype('float') 
-        imname = 'Demodulated_' + self.imageRaw.name
+        imname = 'Demodulated_' + self.imageRaw_name
         scale = [self.zscaling,1,1]
         self.show_image(demodulated_abs, imname, scale= scale)
         sz,sy,sx = demodulated_abs.shape
         self.viewer.dims.current_step = (sz//2,sy//2,sx//2) #centered in the 3 projections
-
+        print('Stack demodulation completed')
         
     
     def calculate_WF_image(self):
-        if hasattr(self, 'imageRaw'):
-            imageWFdata = np.mean(self.imageRaw.data, axis=0)
-            imname = 'WF_' + self.imageRaw.name
-            self.show_image(imageWFdata, imname, scale = [self.zscaling,1,1])
-            sz,sy,sx = imageWFdata.shape
-            self.viewer.dims.current_step = (sz//2,sy//2,sx//2) #centered in the 3 projections
-    
+        imageWFdata = np.mean(self.get_imageRaw(), axis=0)
+        imname = 'WF_' + self.imageRaw_name
+        self.show_image(imageWFdata, imname, scale = [self.zscaling,1,1])
+        sz,sy,sx = imageWFdata.shape
+        self.viewer.dims.current_step = (sz//2,sy//2,sx//2) #centered in the 3 projections
+
     
     
     def calibration(self):  
-        if hasattr(self, 'h') and hasattr(self, 'imageRaw'):
-            
-            data = self.imageRaw.data
+        if hasattr(self, 'h'):
+            data = self.get_imageRaw()
             sp,sz,sy,sx = data.shape
             idx = self.frame_index.val
             delta = self.group.val // 2
@@ -471,29 +482,28 @@ class HexSimAnalysis(QWidget):
             elif not self.gpu.val:
                 imageSIM = self.h.reconstruct_rfftw(current_imageRaw)
             
-            imname = 'SIM_' + self.imageRaw.name
+            imname = 'SIM_' + self.imageRaw_name
             self.show_image(imageSIM, fullname=imname, scale=[0.5,0.5], hold =True)
                 
         else:
-            warnings.warn('SIM processor not calibrated')
-              
+            raise(Warning('SIM processor not calibrated'))  
             
     def stack_reconstruction(self):
         
         def update_sim_image(stack):
-            imname = 'SIMstack_' + self.imageRaw.name
+            imname = 'SIMstack_' + self.imageRaw_name
             scale = [self.zscaling,0.5,0.5]
             self.show_image(stack, fullname=imname, scale=scale)
                 
             sz,sy,sx = stack.shape
             self.viewer.dims.current_step = (sz//2,sy//2,sx//2) #centered in the 3 projections
-            print('Reconstruction completed')
+            print('Stack reconstruction completed')
         
         @thread_worker(connect={'returned': update_sim_image})
         def _stack_reconstruction():
             import warnings
             warnings.filterwarnings('ignore')
-            hyperstack = self.imageRaw.data
+            hyperstack = self.get_imageRaw()
             sp,sz,sy,sx = hyperstack.shape
             stackSIM = np.zeros([sz,2*sy,2*sx], dtype=np.single)
             for zidx in range(sz):
@@ -507,7 +517,7 @@ class HexSimAnalysis(QWidget):
         def _batch_reconstruction():
             import warnings
             warnings.filterwarnings('ignore')
-            hyperstack = self.imageRaw.data
+            hyperstack = self.get_imageRaw()
             sp,sz,sy,sx = hyperstack.shape
             hyperstack = np.swapaxes(hyperstack, 0, 1).reshape((sp * sz, sy, sx))
             if self.compact.val:
@@ -518,7 +528,7 @@ class HexSimAnalysis(QWidget):
         
         # main function exetuted here
         if not self.isCalibrated:
-            warnings.warn('SIM processor not calibrated')
+            raise(Warning('SIM processor not calibrated'))  
             return
         else:
             if self.batch.val:
@@ -558,16 +568,14 @@ class HexSimAnalysis(QWidget):
                 self.find_3phaseshifts()
             self.showCalibrationTable() 
         else:
-            warnings.warn(' Processor not calibrated, unable to show phases')
+            raise(Warning('SIM processor not calibrated, unable to show phases'))
             
         
     def find_7phaseshifts(self):    
         phaseshift = np.zeros((4,7))
         expected_phase = np.zeros((4,7))
-        frame_index = self.frame_index.val
-    
         for i in range (3):
-            phase, _ = self.h.find_phase(self.h.kx[i],self.h.ky[i],self.imageRaw.data[:,frame_index,:,:])
+            phase, _ = self.h.find_phase(self.h.kx[i],self.h.ky[i],self.get_current_image())
             expected_phase[i,:] = np.arange(7) * 2*(i+1) * np.pi / 7
             phaseshift[i,:] = np.unwrap(phase - expected_phase[i,:]) + expected_phase[i,:] - phase[0]
     
@@ -582,8 +590,7 @@ class HexSimAnalysis(QWidget):
         
             
     def find_3phaseshifts(self):
-        frame_index = self.frame_index.val
-        phase, _ = self.h.find_phase(self.h.kx,self.h.ky,self.imageRaw.data[:,frame_index,:,:])
+        phase, _ = self.h.find_phase(self.h.kx,self.h.ky,self.get_current_image())
         expected_phase = np.arange(0,2*np.pi ,2*np.pi / 3)
         phaseshift= np.unwrap(phase - expected_phase) - phase[0]
         error = phaseshift-expected_phase
@@ -660,7 +667,7 @@ if __name__ == '__main__':
     widget = HexSimAnalysis(viewer)
     mode={"choices": ['Translation','Affine','Euclidean']}
     registration = magicgui(widget.register_stack, call_button='Register stack', mode=mode)
-    gui = magicgui(widget.select_layer, auto_call=True)
+    selection = magicgui(widget.select_layer, auto_call=True )# call_button='Select image layer')
     h5_opener = magicgui(widget.open_h5_dataset, call_button='Open h5 dataset')
     resolution = magicgui(widget.estimate_resolution, call_button='Estimate resolution')
     
@@ -668,7 +675,7 @@ if __name__ == '__main__':
                                   name = 'H5 file selection',
                                   add_vertical_stretch = True)
     
-    viewer.window.add_dock_widget(gui,
+    viewer.window.add_dock_widget(selection,
                                   name = 'Image layer selection',
                                   add_vertical_stretch = True)
     

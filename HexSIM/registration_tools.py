@@ -139,7 +139,7 @@ def stack_registration(stack, z_idx, c_idx = 0, method = 'cv2', mode = 'Euclidea
         return registered
 
     else:
-        raise(TypeError, 'only 3D (z,y,x) or 4D (c,z,y,x) registration is supported')
+        raise(TypeError( 'only 3D (z,y,x) or 4D (c,z,y,x) registration is supported'))
        
    
 
@@ -152,6 +152,7 @@ if __name__ == '__main__':
     
     import matplotlib.pyplot as plt
     from skimage import data
+    from scipy.ndimage import fourier_shift
     
     image = data.camera()
     shift0 = np.array([-22.4, 13.32])
@@ -165,11 +166,7 @@ if __name__ == '__main__':
     
     offset_image1 = np.fft.ifftn(offset_image1).real
     
-    
-    
-    
     stack0 = np.array([image,offset_image,offset_image1])
-    
     
     registered1 = stack_registration(stack0, 0 )
 
