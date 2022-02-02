@@ -148,6 +148,7 @@ def align_with_registration(next_rois, previous_rois, filter_size=3):
             #                                flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP)
         except:
             print('frame not registered')
+            warp_matrix = np.eye(2, 3, dtype=np.float32)
          
         dx = warp_matrix[0,2]
         dy = warp_matrix[1,2]
