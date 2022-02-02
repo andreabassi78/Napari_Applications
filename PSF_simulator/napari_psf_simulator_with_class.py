@@ -6,11 +6,10 @@ Created on Sat Jan 22 00:16:58 2022
 """
 from psf_generator import PSF_simulator
 import napari
-from qtpy.QtCore import Qt, QTimer
-from qtpy.QtWidgets import QTableWidget, QSplitter, QHBoxLayout, QTableWidgetItem, QWidget, QGridLayout, QPushButton, QFileDialog
-from qtpy.QtWidgets import QComboBox, QWidget, QFrame, QLabel, QFormLayout, QVBoxLayout, QPushButton, QSpinBox, QDoubleSpinBox, QCheckBox
-from skimage.measure import regionprops
-from napari.layers import Image, Points, Labels, Shapes
+from qtpy.QtCore import Qt
+from qtpy.QtWidgets import QSplitter, QWidget, QPushButton
+from qtpy.QtWidgets import QComboBox,QLabel, QFormLayout, QVBoxLayout, QSpinBox, QDoubleSpinBox, QCheckBox
+
 from napari.qt.threading import thread_worker
 
 import numpy as np

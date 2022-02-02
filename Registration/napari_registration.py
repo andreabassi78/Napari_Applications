@@ -5,8 +5,8 @@ Created on Fri Jan 14 10:35:46 2022
 @author: Andrea Bassi, Giorgia Tortora @Polimi
 """
 
-from registration_utils import plot_data, save_in_excel, normalize_stack, select_rois_from_stack, select_rois_from_image, select_rois_with_bbox
-from registration_utils import align_with_registration, update_position,resize, resize_stack,rescale_position
+from registration_utils import plot_data, save_in_excel, normalize_stack, select_rois_from_stack, select_rois_from_image
+from registration_utils import align_with_registration, update_position, resize_stack,rescale_position
 from registration_utils import calculate_spectrum, correct_decay 
 import numpy as np
 from magicgui import magicgui
@@ -139,20 +139,12 @@ def create_rectangle(center, sy, sx, color, name):
                   [cz, cy-hsy, cx+hsx], # down-right
                   [cz, cy-hsy, cx-hsx]  # down-left
                   ]
-    try:
-        viewer.layers[name].add_rectangles(np.array(rectangle), edge_color=color)
-    except:
-        viewer.add_shapes(np.array(rectangle),
-                          edge_width=2,
-                          edge_color=color,
-                          face_color=[1,1,1,0],
-                          name = name
-                          )
+    return rectangle
+        
     
 @magicgui(call_button="Register ROIs")
 def register_images(image: Image,
                     initial_rois: Labels,
-                    show_rois:bool = True,
                     median_filter_size:int = 3,
                     scale = 0.5
                     ):
@@ -160,51 +152,68 @@ def register_images(image: Image,
     Registers rois chosen on image as square of side roi_size centered in the centroid of initial_rois 
     Based on cv2 registration.
     '''
+    print('Starting registration...')
     points_layer_name = f'centroids {image.name}'
     rectangles_name = f'rectangles {image.name}'
     # remove registration points if present
     label_values= max_projection(initial_rois)
     label_colors = get_labels_color(label_values)
     labels = max_projection(initial_rois)
-    _initial_positions, _roi_sy, _roi_sx = get_rois_props(labels)  
+    real_initial_positions, real_roi_sy, real_roi_sx = get_rois_props(labels) 
+    roi_num = len(real_initial_positions)
     if points_layer_name in viewer.layers:
         viewer.layers.remove(points_layer_name)
     if rectangles_name in viewer.layers:
         viewer.layers.remove(rectangles_name)
+        
     
-            
+    def add_rectangles(rectangles):
+        import numpy.matlib
+        color_array= np.matlib.repmat(label_colors,len(rectangles)//roi_num,1)
+        shapes = viewer.add_shapes(np.array(rectangles[0]),
+                          edge_width=2,
+                          edge_color=color_array[0],
+                          face_color=[1,1,1,0],
+                          name = rectangles_name
+                          )
+        shapes.add_rectangles(np.array(rectangles[1:]),
+                              edge_color=color_array[1:])
+        print('... ending registration.') 
+                
     def add_registered_rois(centers):
     
         for center_idx, center in enumerate(centers):
             create_point(center,points_layer_name)
-            if show_rois:
-                create_rectangle(center, 
-                                 _roi_sy[center_idx], _roi_sx[center_idx],
-                                 label_colors[center_idx],
-                                 name = rectangles_name
-                                 )
+        
       
-    @thread_worker(connect={'yielded': add_registered_rois})
+    @thread_worker(connect={'yielded': add_registered_rois, 'returned':add_rectangles})
     def _register_images():    
         warnings.filterwarnings('ignore')
-        print('Starting registration...')
         stack = np.asarray(image.data)
         stack = resize_stack(stack, scale)    
         normalize = True 
         if normalize: # this option is obsolete
             stack, _vmin, _vmax = normalize_stack(stack)
         image0 = stack[0,...]
-        initial_positions= rescale_position(_initial_positions,scale)
-        roi_sy = [int(ri*scale) for ri in _roi_sy]
-        roi_sx = [int(ri*scale) for ri in _roi_sx]
+        initial_positions= rescale_position(real_initial_positions,scale)
+        roi_sy = [int(ri*scale) for ri in real_roi_sy]
+        roi_sx = [int(ri*scale) for ri in real_roi_sx]
         previous_rois = select_rois_from_image(image0, initial_positions, roi_sy,roi_sx)
         time_frames_num, _, _ = stack.shape
         next_positions = initial_positions.copy()
+        rectangles = []
         for t_index in range(0, time_frames_num, 1):
-            yield rescale_position(next_positions,1/scale)
-            print(f'registering frame {t_index} of {time_frames_num-1}')
-            next_rois = select_rois_from_image(stack[t_index,...], next_positions, roi_sy,roi_sx)
+            real_next_positions = rescale_position(next_positions,1/scale)
+            for roi_idx, position in enumerate(real_next_positions):
+                rect = create_rectangle(position, 
+                                 real_roi_sy[roi_idx], real_roi_sx[roi_idx],
+                                 label_colors[roi_idx],
+                                 name = rectangles_name
+                                 )
+                rectangles.append(rect)
+            yield real_next_positions
             
+            next_rois = select_rois_from_image(stack[t_index,...], next_positions, roi_sy,roi_sx)
             # registration based on opencv function
             dx, dy = align_with_registration(next_rois,
                                                 previous_rois,
@@ -216,9 +225,12 @@ def register_images(image: Image,
                                              dx_list = dx,
                                              dy_list = dy
                                              )
-        print(f'... registered {time_frames_num} frames.') 
-    
+            
+        return rectangles
+            
     _register_images()
+    
+    
     
 
 def calculate_intensity(image:Image,
@@ -336,8 +348,8 @@ if __name__ == '__main__':
     
     
     test_label = np.zeros([sy,sx],dtype=int)
-    test_label[1069:1100, 831:850] = 1
-    test_label[1370:1410, 626:640] = 7
+    test_label[1029:1180, 801:870] = 1
+    test_label[1320:1470, 600:670] = 7
    
     labels_layer = viewer.add_labels(test_label, name='labels')
 

@@ -27,9 +27,9 @@ for idx in range(10):
     points_layer.add(np.array([300,300+idx*20]))
 #updates the properties
 
-# new_point_properties = {
-#     'color_idx': np.array([1, 0, 2, 1])
-# }
+new_point_properties = {
+    'color_idx': np.array([1, 0, 2, 1])
+}
 
 
-# viewer.layers['points'].properties = new_point_properties
+viewer.layers['points'].properties = new_point_properties

@@ -48,7 +48,8 @@ def select_rois_with_bbox(im, bboxes):
     rois = []
     for bbox in bboxes:
         rois.append(im[bbox[0]:bbox[2],bbox[1]:bbox[3]])
-    return rois    
+    return rois  
+  
 
 def resize_stack(stack,scale):
     sz,sy,sx = stack.shape
@@ -59,8 +60,6 @@ def resize_stack(stack,scale):
     for pidx,plane in enumerate(stack):
         rescaled[pidx,:,:] = cv2.resize(plane, dim, interpolation = cv2.INTER_AREA)
     return(rescaled)
-        
-    
 
 
 def resize(imgs, scale):
@@ -123,8 +122,6 @@ def select_rois_from_stack(input_stack, positions, sizesy, sizesx):
     
 def align_with_registration(next_rois, previous_rois, filter_size=3):  
     
-    original_rois = []
-    aligned_rois = []
     dx_list = []
     dy_list = []
     
