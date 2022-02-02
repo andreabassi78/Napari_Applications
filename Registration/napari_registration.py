@@ -6,7 +6,7 @@ Created on Fri Jan 14 10:35:46 2022
 """
 
 from registration_utils import plot_data, save_in_excel, normalize_stack, select_rois_from_stack, select_rois_from_image, select_rois_with_bbox
-from registration_utils import align_with_registration, update_position
+from registration_utils import align_with_registration, update_position,resize, resize_stack,rescale_position
 from registration_utils import calculate_spectrum, correct_decay 
 import numpy as np
 from magicgui import magicgui
@@ -43,6 +43,7 @@ def get_labels_values(labels_data):
 
 def get_labels_color(labels_data):
     colors_values = get_labels_values(labels_data)
+    labels_layer = Labels(labels_data) # TODO use an active label on viewer
     colors = labels_layer.get_color(colors_values)
     return colors
 
@@ -115,7 +116,19 @@ def get_rois_props(label_data):
         roi_sizes_x.append(_sizex)
     return centroids, roi_sizes_y, roi_sizes_x   
 
-def create_rectangle(center, sy, sx, color):
+
+def create_point(center, name):
+    try:
+        viewer.layers[name].add(np.array(center))
+    except:
+        viewer.add_points(np.array(center),
+                          edge_color='green',
+                          face_color=[1,1,1,0],
+                          name = name
+                          )
+
+
+def create_rectangle(center, sy, sx, color, name):
     cz=center[0]
     cy=center[1]
     cx=center[2]
@@ -126,85 +139,85 @@ def create_rectangle(center, sy, sx, color):
                   [cz, cy-hsy, cx+hsx], # down-right
                   [cz, cy-hsy, cx-hsx]  # down-left
                   ]
-    try :
-        viewer.layers['rectangles'].add_rectangles(np.array(rectangle), edge_color=color)
-    except:    
+    try:
+        viewer.layers[name].add_rectangles(np.array(rectangle), edge_color=color)
+    except:
         viewer.add_shapes(np.array(rectangle),
                           edge_width=2,
                           edge_color=color,
                           face_color=[1,1,1,0],
-                          name = 'rectangles'
+                          name = name
                           )
     
 @magicgui(call_button="Register ROIs")
 def register_images(image: Image,
                     initial_rois: Labels,
+                    show_rois:bool = True,
                     median_filter_size:int = 3,
+                    scale = 0.5
                     ):
     '''
     Registers rois chosen on image as square of side roi_size centered in the centroid of initial_rois 
     Based on cv2 registration.
     '''
-    points_layer_name = f'registered rois {image.name}'
+    points_layer_name = f'centroids {image.name}'
+    rectangles_name = f'rectangles {image.name}'
     # remove registration points if present
     label_values= max_projection(initial_rois)
     label_colors = get_labels_color(label_values)
-    for layer in viewer.layers:
-        if layer.name == points_layer_name:
-            viewer.layers.remove(points_layer_name)
-    # initialize registration points layer with properties
-    empty_point = Points([], ndim=image.data.ndim,
-                 size = 2,
-                 edge_color = 'red',
-                 face_color = 'red', #[1,1,1,0],
-                 name = points_layer_name)
-    viewer.layers.append(empty_point)
+    labels = max_projection(initial_rois)
+    _initial_positions, _roi_sy, _roi_sx = get_rois_props(labels)  
+    if points_layer_name in viewer.layers:
+        viewer.layers.remove(points_layer_name)
+    if rectangles_name in viewer.layers:
+        viewer.layers.remove(rectangles_name)
     
-    def add_registered_points(params):
-        centers = params[0]
-        roisy = params[1]
-        roisx = params[2]
-        idx = params[3]
-        #warnings.filterwarnings('ignore')
+            
+    def add_registered_rois(centers):
+    
         for center_idx, center in enumerate(centers):
-            registered_points = viewer.layers[points_layer_name]
-            registered_points.add(center)
-            create_rectangle(center, 
-                              roisy[center_idx], roisx[center_idx],
-                              label_colors[center_idx])
-        viewer.dims.current_step = (idx,0,0)
+            create_point(center,points_layer_name)
+            if show_rois:
+                create_rectangle(center, 
+                                 _roi_sy[center_idx], _roi_sx[center_idx],
+                                 label_colors[center_idx],
+                                 name = rectangles_name
+                                 )
       
-    @thread_worker(connect={'yielded': add_registered_points})
+    @thread_worker(connect={'yielded': add_registered_rois})
     def _register_images():    
         warnings.filterwarnings('ignore')
         print('Starting registration...')
         stack = np.asarray(image.data)
+        stack = resize_stack(stack, scale)    
         normalize = True 
         if normalize: # this option is obsolete
             stack, _vmin, _vmax = normalize_stack(stack)
         image0 = stack[0,...]
-        labels = max_projection(initial_rois)
-             
-        initial_positions, sy, sx = get_rois_props(labels)   
-         
-        previous_rois = select_rois_from_image(image0, initial_positions, sy,sx)
+        initial_positions= rescale_position(_initial_positions,scale)
+        roi_sy = [int(ri*scale) for ri in _roi_sy]
+        roi_sx = [int(ri*scale) for ri in _roi_sx]
+        previous_rois = select_rois_from_image(image0, initial_positions, roi_sy,roi_sx)
         time_frames_num, _, _ = stack.shape
         next_positions = initial_positions.copy()
         for t_index in range(0, time_frames_num, 1):
-            yield( (next_positions, sy, sx, t_index) )
+            yield rescale_position(next_positions,1/scale)
             print(f'registering frame {t_index} of {time_frames_num-1}')
-            next_rois = select_rois_from_image(stack[t_index,...], next_positions, sy,sx)
+            next_rois = select_rois_from_image(stack[t_index,...], next_positions, roi_sy,roi_sx)
+            
             # registration based on opencv function
             dx, dy = align_with_registration(next_rois,
                                                 previous_rois,
                                                 median_filter_size
                                                 )
+            
             next_positions = update_position(next_positions,
                                              dz = 1,
                                              dx_list = dx,
                                              dy_list = dy
                                              )
         print(f'... registered {time_frames_num} frames.') 
+    
     _register_images()
     
 
@@ -212,7 +225,7 @@ def calculate_intensity(image:Image,
                         roi_num:int,
                         points_layer:Points,
                         labels_layer:Labels,
-                        roi_size:int):
+                        ):
     """
     Calculates the mean intensity,
     within rectangular Rois of size roi_size, centered in points_layer,
@@ -268,7 +281,6 @@ def process_rois(image: Image,
                  registered_points: Points,
                  initial_rois: Labels,
                  correct_photobleaching: bool,
-                 subroi_size:int = 100,
                  plot_results:bool = True,
                  save_results:bool = False,
                  path: pathlib.Path = os.getcwd()+"\\test.xlsx",
@@ -280,7 +292,7 @@ def process_rois(image: Image,
     roi_num = len(locations) // time_frames_num
     intensities = calculate_intensity(image, roi_num, 
                                       registered_points,
-                                      initial_rois, subroi_size)
+                                      initial_rois)
     yx, deltar, dyx, dr = measure_displacement(image, roi_num, registered_points)
     
     if correct_photobleaching:
@@ -292,7 +304,7 @@ def process_rois(image: Image,
         colors = get_labels_color(label_values)
         plot_data(deltar, colors, "time index", "lenght (px)")
         plot_data(intensities, colors, "time index", "mean intensity")
-        plot_data(spectra, colors, "frequency index", "power spectrum", plot_type = 'log')
+        #plot_data(spectra, colors, "frequency index", "power spectrum", plot_type = 'log')
     
     if save_results:
         save_in_excel(filename_xls = path,
@@ -341,10 +353,6 @@ if __name__ == '__main__':
     
     napari.run() 
     
-    
-    
-    #bbox = label_props[idx]['bbox']
-    #image_data[bbox[0]:bbox[2],bbox[1]:bbox[3]]
     
     
     
