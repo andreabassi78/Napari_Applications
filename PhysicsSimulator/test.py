@@ -80,9 +80,6 @@ class Sphere():
         self._color = new_color
     
 
-def mag(vector):
-    return np.sqrt(np.sum(vector**2))
-    
 
 class System:
            

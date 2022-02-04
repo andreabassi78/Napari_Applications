@@ -120,12 +120,17 @@ def select_rois_from_stack(input_stack, positions, sizesy, sizesx):
     return rois
 
     
-def align_with_registration(next_rois, previous_rois, filter_size=3):  
+def align_with_registration(next_rois, previous_rois, filter_size=3, mode ='Translation'):  
+    warp_mode_dct = {'Translation' : cv2.MOTION_TRANSLATION,
+                     'Affine' : cv2.MOTION_AFFINE,
+                     'Euclidean' : cv2.MOTION_EUCLIDEAN,
+                     'Homography' : cv2.MOTION_HOMOGRAPHY
+                     }
+    warp_mode = warp_mode_dct[mode] 
     
     dx_list = []
     dy_list = []
     
-    warp_mode = cv2.MOTION_TRANSLATION 
     number_of_iterations = 1000
     termination_eps = 1e-6
     criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT,
@@ -138,7 +143,10 @@ def align_with_registration(next_rois, previous_rois, filter_size=3):
         
         sx,sy = previous_roi.shape
         
-        warp_matrix = np.eye(2, 3, dtype=np.float32)
+        if warp_mode == cv2.MOTION_HOMOGRAPHY :
+            warp_matrix = np.eye(3, 3, dtype=np.float32)
+        else :
+            warp_matrix = np.eye(2, 3, dtype=np.float32)
         
         try:
             _, warp_matrix = cv2.findTransformECC (previous_roi, next_roi,

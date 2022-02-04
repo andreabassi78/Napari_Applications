@@ -53,17 +53,18 @@ def stack_registration(stack, z_idx, c_idx = 0, method = 'cv2', mode = 'Euclidea
                          }
         warp_mode = warp_mode_dct[mode] 
         
-        if warp_mode == cv2.MOTION_HOMOGRAPHY :
-            warp_matrix = np.eye(3, 3, dtype=np.float32)
-        else :
-            warp_matrix = np.eye(2, 3, dtype=np.float32)
+        
         
         number_of_iterations = 3000
         termination_eps = 1e-6
         criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT,
                         number_of_iterations,  termination_eps)
             
-        warp_matrix = np.eye(2, 3, dtype=np.float32)
+        if warp_mode == cv2.MOTION_HOMOGRAPHY :
+            warp_matrix = np.eye(3, 3, dtype=np.float32)
+        else :
+            warp_matrix = np.eye(2, 3, dtype=np.float32)
+            
         try:
             _, warp_matrix = cv2.findTransformECC((ref.astype(np.float32)), im.astype(np.float32),
                                                       warp_matrix, warp_mode, criteria)

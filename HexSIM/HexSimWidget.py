@@ -187,6 +187,7 @@ class HexSimAnalysis(QWidget):
         im_layer = self.show_image(stack, fullname=fullname)
         self.rescaleZ()
         self.center_image(im_layer)
+        self.viewer.dims.axis_labels = ('phase','z','y','c')
        
             
     def select_layer(self, image: Image):
@@ -665,7 +666,7 @@ if __name__ == '__main__':
     viewer = napari.Viewer()
     viewer.open(file)
     widget = HexSimAnalysis(viewer)
-    mode={"choices": ['Translation','Affine','Euclidean']}
+    mode={"choices": ['Translation','Affine','Euclidean','Homography']}
     registration = magicgui(widget.register_stack, call_button='Register stack', mode=mode)
     selection = magicgui(widget.select_layer, auto_call=True )# call_button='Select image layer')
     h5_opener = magicgui(widget.open_h5_dataset, call_button='Open h5 dataset')

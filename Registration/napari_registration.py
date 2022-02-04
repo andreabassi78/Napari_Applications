@@ -142,9 +142,11 @@ def create_rectangle(center, sy, sx, color, name):
     return rectangle
         
     
-@magicgui(call_button="Register ROIs")
+@magicgui(call_button="Register ROIs",
+          mode={"choices": ['Translation','Affine','Euclidean','Homography']})
 def register_images(image: Image,
                     initial_rois: Labels,
+                    mode: str = 'Translation',
                     median_filter_size:int = 3,
                     scale = 0.5
                     ):
@@ -156,7 +158,7 @@ def register_images(image: Image,
     points_layer_name = f'centroids {image.name}'
     rectangles_name = f'rectangles {image.name}'
     # remove registration points if present
-    label_values= max_projection(initial_rois)
+    label_values = max_projection(initial_rois)
     label_colors = get_labels_color(label_values)
     labels = max_projection(initial_rois)
     real_initial_positions, real_roi_sy, real_roi_sx = get_rois_props(labels) 
@@ -217,8 +219,8 @@ def register_images(image: Image,
             # registration based on opencv function
             dx, dy = align_with_registration(next_rois,
                                                 previous_rois,
-                                                median_filter_size
-                                                )
+                                                median_filter_size,
+                                                mode)
             
             next_positions = update_position(next_positions,
                                              dz = 1,
