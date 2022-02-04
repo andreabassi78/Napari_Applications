@@ -100,13 +100,12 @@ def subtract_background(image: Image,
     _subtract_background()
 
 
-def get_rois_props(label_data):
+def get_rois_props(label_data, t=0):
     centroids = []  
     roi_sizes_x = []
     roi_sizes_y = []
     props = regionprops(label_image=label_data)#, intensity_image=image0)
     for prop in props:
-        t = 0
         yx = prop['centroid']
         bbox = prop['bbox']
         _sizey = int(np.abs(bbox[0]-bbox[2]))
@@ -151,7 +150,7 @@ def register_images(image: Image,
                     scale = 0.5
                     ):
     '''
-    Registers rois chosen on image as square of side roi_size centered in the centroid of initial_rois 
+    Registers rectangular rois chosen on image as the bound box of the labels.
     Based on cv2 registration.
     '''
     print('Starting registration...')
@@ -161,16 +160,24 @@ def register_images(image: Image,
     label_values = max_projection(initial_rois)
     label_colors = get_labels_color(label_values)
     labels = max_projection(initial_rois)
-    real_initial_positions, real_roi_sy, real_roi_sx = get_rois_props(labels) 
+    initial_time_index = viewer.dims.current_step[0]
+    real_initial_positions, real_roi_sy, real_roi_sx = get_rois_props(labels, initial_time_index) 
     roi_num = len(real_initial_positions)
+    stack = np.asarray(image.data)
+    time_frames_num, _, _ = stack.shape
+    
     if points_layer_name in viewer.layers:
         viewer.layers.remove(points_layer_name)
     if rectangles_name in viewer.layers:
         viewer.layers.remove(rectangles_name)
         
-    
-    def add_rectangles(rectangles):
+    def add_rois(params):
         import numpy.matlib
+        rectangles = params[0]
+        centers = params[1]
+        rectangles = rectangles.reshape((roi_num*time_frames_num,4,3))
+        centers = centers.reshape((roi_num*time_frames_num,3))
+        
         color_array= np.matlib.repmat(label_colors,len(rectangles)//roi_num,1)
         shapes = viewer.add_shapes(np.array(rectangles[0]),
                           edge_width=2,
@@ -180,31 +187,33 @@ def register_images(image: Image,
                           )
         shapes.add_rectangles(np.array(rectangles[1:]),
                               edge_color=color_array[1:])
+        
+        viewer.add_points(np.array(centers),
+                              edge_color='green',
+                              face_color=[1,1,1,0],
+                              name = points_layer_name
+                              )
+        
         print('... ending registration.') 
-                
-    def add_registered_rois(centers):
-    
-        for center_idx, center in enumerate(centers):
-            create_point(center,points_layer_name)
         
       
-    @thread_worker(connect={'yielded': add_registered_rois, 'returned':add_rectangles})
+    @thread_worker(connect={'returned':add_rois})
     def _register_images():    
-        warnings.filterwarnings('ignore')
-        stack = np.asarray(image.data)
-        stack = resize_stack(stack, scale)    
-        normalize = True 
-        if normalize: # this option is obsolete
-            stack, _vmin, _vmax = normalize_stack(stack)
-        image0 = stack[0,...]
+        warnings.filterwarnings('ignore')        
+        resized = resize_stack(stack, scale)
+        resized, _vmin, _vmax = normalize_stack(resized)
+        image0 = resized[initial_time_index,...]
+        
         initial_positions= rescale_position(real_initial_positions,scale)
         roi_sy = [int(ri*scale) for ri in real_roi_sy]
         roi_sx = [int(ri*scale) for ri in real_roi_sx]
         previous_rois = select_rois_from_image(image0, initial_positions, roi_sy,roi_sx)
-        time_frames_num, _, _ = stack.shape
+
+        rectangles = np.zeros([time_frames_num,roi_num,4,3])
+        centers = np.zeros([time_frames_num,roi_num,3])
         next_positions = initial_positions.copy()
-        rectangles = []
-        for t_index in range(0, time_frames_num, 1):
+        
+        for t_index in range(initial_time_index, time_frames_num, 1):
             real_next_positions = rescale_position(next_positions,1/scale)
             for roi_idx, position in enumerate(real_next_positions):
                 rect = create_rectangle(position, 
@@ -212,10 +221,10 @@ def register_images(image: Image,
                                  label_colors[roi_idx],
                                  name = rectangles_name
                                  )
-                rectangles.append(rect)
-            yield real_next_positions
+                rectangles[t_index,roi_idx,:,:] = rect
+                centers[t_index,roi_idx,:] = position
             
-            next_rois = select_rois_from_image(stack[t_index,...], next_positions, roi_sy,roi_sx)
+            next_rois = select_rois_from_image(resized[t_index,...], next_positions, roi_sy,roi_sx)
             # registration based on opencv function
             dx, dy = align_with_registration(next_rois,
                                                 previous_rois,
@@ -227,8 +236,35 @@ def register_images(image: Image,
                                              dx_list = dx,
                                              dy_list = dy
                                              )
+        
+        next_positions = initial_positions.copy()    
+        for t_index in range(initial_time_index-1, -1, -1):
             
-        return rectangles
+            
+            next_rois = select_rois_from_image(resized[t_index,...], next_positions, roi_sy,roi_sx)
+            # registration based on opencv function
+            dx, dy = align_with_registration(next_rois,
+                                                previous_rois,
+                                                median_filter_size,
+                                                mode)
+            
+            next_positions = update_position(next_positions,
+                                              dz = -1,
+                                              dx_list = dx,
+                                              dy_list = dy
+                                              )
+            real_next_positions = rescale_position(next_positions,1/scale)
+            for roi_idx, position in enumerate(real_next_positions):
+                rect = create_rectangle(position, 
+                                  real_roi_sy[roi_idx], real_roi_sx[roi_idx],
+                                  label_colors[roi_idx],
+                                  name = rectangles_name
+                                  )
+                rectangles[t_index,roi_idx,:,:] = rect
+                centers[t_index,roi_idx,:] = position
+            
+            
+        return (rectangles, centers)
             
     _register_images()
     
