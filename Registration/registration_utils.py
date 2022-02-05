@@ -119,6 +119,90 @@ def select_rois_from_stack(input_stack, positions, sizesy, sizesx):
                                    x-half_sizex:x+half_sizex])
     return rois
 
+
+def apply_warp_to_stack(stack, wm):
+    sz,sy,sx = stack.shape
+    moved = np.zeros_like(stack)
+    for idx in range(sz):
+        moved[idx,:,:] = cv2.warpAffine(stack[idx,:,:], wm[idx], (sx,sy),
+                                        flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP)
+    return moved
+    
+
+
+def stack_registration(stack, z_idx, c_idx = 0, mode = 'Euclidean'):
+    '''
+    Stack registration works on 3D 4D stacks
+    Paramenters:
+    z_idx: index of the stack where the registration starts
+    c_idx: for 4D stacks it is the channel on which the registration is performed. 
+        The other channels are registered with the warp matrix found in this channel
+    method: choose between 'optical flow', 'crosscorrelation', 'cv2'
+    mode: type of registration for cv2
+        
+    Returns a 3D or 4D resistered stack
+    
+    '''
+    
+    def cv2_reg(ref,im, sy, sx, mode = mode):
+
+        warp_mode_dct = {'Translation' : cv2.MOTION_TRANSLATION,
+                         'Affine' : cv2.MOTION_AFFINE,
+                         'Euclidean' : cv2.MOTION_EUCLIDEAN,
+                         'Homography' : cv2.MOTION_HOMOGRAPHY
+                         }
+        warp_mode = warp_mode_dct[mode] 
+        
+        
+        
+        number_of_iterations = 3000
+        termination_eps = 1e-6
+        criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT,
+                        number_of_iterations,  termination_eps)
+            
+        if warp_mode == cv2.MOTION_HOMOGRAPHY :
+            warp_matrix = np.eye(3, 3, dtype=np.float32)
+        else :
+            warp_matrix = np.eye(2, 3, dtype=np.float32)
+            
+        try:
+            _, warp_matrix = cv2.findTransformECC((ref.astype(np.float32)), im.astype(np.float32),
+                                                      warp_matrix, warp_mode, criteria)
+            
+            reg =  apply_warp(im, warp_matrix, sy, sx)
+        except Exception as e:
+            # print(f'{e}, frame not registered')
+            reg = im
+        
+        return reg, warp_matrix 
+    
+    
+    def apply_warp(im,w,sy,sx):
+        reg = cv2.warpAffine(im, w, (sx,sy),
+                                       flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP)
+        return reg
+   
+    sz, sy, sx = stack.shape
+
+    registered = np.zeros_like(stack)
+    wm_list = [np.eye(2, 3, dtype=np.float32)]*sz
+    registered[z_idx,:,:] = stack[z_idx,:,:]
+    #register forwards
+    for zi in range(z_idx+1,sz):
+        ref_image = registered[zi-1,:,:]
+        current_image = stack[zi,:,:]
+        registered[zi,:,:],w_m = cv2_reg(ref_image, current_image, sy, sx)
+        wm_list[zi] = w_m
+    #register backwards
+    for zi in range(z_idx-1,-1,-1):
+        ref_image = registered[zi+1,:,:]
+        current_image = stack[zi,:,:]
+        registered[zi,:,:],w_m = cv2_reg(ref_image, current_image, sy, sx)
+        wm_list[zi] = w_m
+    
+    return registered, wm_list
+       
+   
     
 def align_with_registration(next_rois, previous_rois, filter_size=3, mode ='Translation'):  
     warp_mode_dct = {'Translation' : cv2.MOTION_TRANSLATION,

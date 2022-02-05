@@ -10,7 +10,7 @@ from magicgui import magicgui
 import napari
 
 @magicgui(call_button="run segmentation")
-def segment(image_layer :Image,)->Labels:
+def segment(image_layer :Image,closing_size:int)->Labels:
     
     data = np.array(image_layer.data)
     thresh = threshold_otsu(data)
