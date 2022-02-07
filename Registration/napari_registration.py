@@ -76,31 +76,31 @@ def subtract_background(image: Image,
         except KeyError:
             # otherwise add it to the viewer
             viewer.add_image(new_image, name=result_name)
-        
             
       
     @thread_worker(connect={'yielded': update_image})
     def _subtract_background():
-        warnings.filterwarnings('ignore')
-        AMAX=2**16-1
-        #check_if_suitable_layer(image, labels, roitype='registration')
-        original = np.asarray(image.data)
-        labels_data = max_projection(labels)
-        mask = np.asarray(labels_data>0).astype(int)
-        corrected = np.zeros_like(original)
-         
-        for plane_idx, plane in enumerate(original.astype('int')):
-            print(f'Correcting background on frame {plane_idx}')
-            props = regionprops(label_image=mask,
-                                intensity_image=plane)
-            background = props[0]['mean_intensity'] #only one region is defined in mask
-            diff = np.clip(plane-background, a_min=0, a_max=AMAX).astype('uint16')
-            corrected[plane_idx,:,:] = diff
-            yield corrected
-        subtract_background.enabled = True
-         
-    
-    subtract_background.enabled = False
+        try:
+            subtract_background.enabled = False
+            warnings.filterwarnings('ignore')
+            AMAX=2**16-1
+            #check_if_suitable_layer(image, labels, roitype='registration')
+            original = np.asarray(image.data)
+            labels_data = max_projection(labels)
+            mask = np.asarray(labels_data>0).astype(int)
+            corrected = np.zeros_like(original)
+             
+            for plane_idx, plane in enumerate(original.astype('int')):
+                print(f'Correcting background on frame {plane_idx}')
+                props = regionprops(label_image=mask,
+                                    intensity_image=plane)
+                background = props[0]['mean_intensity'] #only one region is defined in mask
+                diff = np.clip(plane-background, a_min=0, a_max=AMAX).astype('uint16')
+                corrected[plane_idx,:,:] = diff
+                yield corrected
+        finally:
+            subtract_background.enabled = True
+             
     _subtract_background()
     
 def get_rois_props(label_data, t=0, bbox_zoom = 1):
@@ -163,9 +163,7 @@ def register_rois(image: Image,
     Based on cv2 registration.
     '''
     print('Starting registration...')
-    register_rois.enabled = False
-    points_layer_name = f'centroids {image.name}'
-    rectangles_name = f'rectangles {image.name}'
+    
     # remove registration points if present
     label_values = max_projection(labels_layer)
     label_colors = get_labels_color(label_values)
@@ -177,24 +175,21 @@ def register_rois(image: Image,
     roi_num = len(real_initial_positions)
     stack = np.asarray(image.data)
     time_frames_num, sy, sx = stack.shape
-    
-    if points_layer_name in viewer.layers:
-        viewer.layers.remove(points_layer_name)
-    if rectangles_name in viewer.layers:
-        viewer.layers.remove(rectangles_name)
         
     def add_rois(params):
-        try:
             import numpy.matlib
             rectangles = params[0]
             _centers = params[1]
-            
-            
-    
             rectangles = rectangles.reshape((roi_num*time_frames_num,4,3))
             centers = _centers.reshape((roi_num*time_frames_num,3))
-            
             color_array= np.matlib.repmat(label_colors,len(rectangles)//roi_num,1)
+            
+            points_layer_name = f'centroids_{image.name}'
+            rectangles_name = f'rectangles_{image.name}'
+            if points_layer_name in viewer.layers:
+                viewer.layers.remove(points_layer_name)
+            if rectangles_name in viewer.layers:
+                viewer.layers.remove(rectangles_name)
             shapes = viewer.add_shapes(np.array(rectangles[0]),
                               edge_width=2,
                               edge_color=color_array[0],
@@ -225,64 +220,66 @@ def register_rois(image: Image,
                     registered = select_rois_from_stack(stack, pos, 
                                                          [int(sizey)], [int(sizex)])
             
-                    registered_name= f'registered_{image.name}_roi{roi_idx}'
-                    im = viewer.add_image(np.array(registered), name= registered_name)
+                    registered_roi_name= f'registered_{image.name}_roi{roi_idx}'
+                    if registered_roi_name in viewer.layers:
+                            viewer.layers.remove(registered_roi_name)
+                    im = viewer.add_image(np.array(registered), name= registered_roi_name)
                     #im.translate = [0,int(y-sizey/2),int(x-sizex/2)]
                
             print('... ending registration.')
+        
+        
+    @thread_worker(connect={'returned':add_rois})
+    def _register_rois():    
+        try:
+            register_rois.enabled = False
+            warnings.filterwarnings('ignore')        
+            resized = resize_stack(stack, scale)
+            resized, _vmin, _vmax = normalize_stack(resized)
+            image0 = resized[initial_time_index,...]
+            
+            initial_positions = rescale_position(real_initial_positions,scale)
+            roi_sy = [int(ri*scale) for ri in real_roi_sy]
+            roi_sx = [int(ri*scale) for ri in real_roi_sx]
+            previous_rois = select_rois_from_image(image0, initial_positions, roi_sy,roi_sx)
+            previous_rois = filter_images(previous_rois, median_filter_size)
+    
+            rectangles = np.zeros([time_frames_num,roi_num,4,3]) 
+            centers = np.zeros([time_frames_num,roi_num,3])
+             # register forwards
+            next_positions = initial_positions.copy()
+            real_next_positions = rescale_position(next_positions,1/scale)
+            centers[initial_time_index,:,:] = np.array(real_next_positions)
+            rectangles[initial_time_index,:,:,:] = create_rectangles(real_next_positions, real_roi_sy, real_roi_sx)
+            for t_index in range(initial_time_index+1, time_frames_num, 1):
+                next_rois = select_rois_from_image(resized[t_index,...], next_positions, roi_sy,roi_sx)
+                next_rois = filter_images(next_rois, median_filter_size)
+                dx, dy, _wm = align_with_registration(next_rois, previous_rois,
+                                                 mode)
+                next_positions = update_position(next_positions, dz = 1,
+                                                 dx_list = dx, dy_list = dy)
+                real_next_positions = rescale_position(next_positions,1/scale)
+                centers[t_index,:,:] = np.array(real_next_positions)
+                rectangles[t_index,:,:,:] = create_rectangles(real_next_positions, real_roi_sy, real_roi_sx)
+            # register backwards  
+            next_positions = initial_positions.copy()    
+            for t_index in range(initial_time_index-1, -1, -1):
+                next_rois = select_rois_from_image(resized[t_index,...], next_positions, roi_sy,roi_sx)
+                next_rois = filter_images(next_rois, median_filter_size)
+                dx, dy, _wm = align_with_registration(next_rois,previous_rois,
+                                                  mode)
+                next_positions = update_position(next_positions, dz = -1,
+                                                  dx_list = dx, dy_list = dy)
+                real_next_positions = rescale_position(next_positions,1/scale)
+                centers[t_index,:,:] = np.array(real_next_positions)
+                rectangles[t_index,:,:,:] = create_rectangles(real_next_positions, real_roi_sy, real_roi_sx)
         except Exception as e:
             print(e)
         finally:
-            register_rois.enabled = True
-        
-        
-      
-    @thread_worker(connect={'returned':add_rois})
-    def _register_rois():    
-        warnings.filterwarnings('ignore')        
-        resized = resize_stack(stack, scale)
-        resized, _vmin, _vmax = normalize_stack(resized)
-        image0 = resized[initial_time_index,...]
-        
-        initial_positions = rescale_position(real_initial_positions,scale)
-        roi_sy = [int(ri*scale) for ri in real_roi_sy]
-        roi_sx = [int(ri*scale) for ri in real_roi_sx]
-        previous_rois = select_rois_from_image(image0, initial_positions, roi_sy,roi_sx)
-        previous_rois = filter_images(previous_rois, median_filter_size)
-
-        rectangles = np.zeros([time_frames_num,roi_num,4,3]) 
-        centers = np.zeros([time_frames_num,roi_num,3])
-         # register forwards
-        next_positions = initial_positions.copy()
-        real_next_positions = rescale_position(next_positions,1/scale)
-        centers[initial_time_index,:,:] = np.array(real_next_positions)
-        rectangles[initial_time_index,:,:,:] = create_rectangles(real_next_positions, real_roi_sy, real_roi_sx)
-        for t_index in range(initial_time_index+1, time_frames_num, 1):
-            next_rois = select_rois_from_image(resized[t_index,...], next_positions, roi_sy,roi_sx)
-            next_rois = filter_images(next_rois, median_filter_size)
-            dx, dy, _wm = align_with_registration(next_rois, previous_rois,
-                                             mode)
-            next_positions = update_position(next_positions, dz = 1,
-                                             dx_list = dx, dy_list = dy)
-            real_next_positions = rescale_position(next_positions,1/scale)
-            centers[t_index,:,:] = np.array(real_next_positions)
-            rectangles[t_index,:,:,:] = create_rectangles(real_next_positions, real_roi_sy, real_roi_sx)
-        # register backwards  
-        next_positions = initial_positions.copy()    
-        for t_index in range(initial_time_index-1, -1, -1):
-            next_rois = select_rois_from_image(resized[t_index,...], next_positions, roi_sy,roi_sx)
-            next_rois = filter_images(next_rois, median_filter_size)
-            dx, dy, _wm = align_with_registration(next_rois,previous_rois,
-                                              mode)
-            next_positions = update_position(next_positions, dz = -1,
-                                              dx_list = dx, dy_list = dy)
-            real_next_positions = rescale_position(next_positions,1/scale)
-            centers[t_index,:,:] = np.array(real_next_positions)
-            rectangles[t_index,:,:,:] = create_rectangles(real_next_positions, real_roi_sy, real_roi_sx)
-           
+            register_rois.enabled = True       
         return (rectangles, centers)
-            
-    _register_rois()
+    _register_rois()    
+    
     
     
 def calculate_intensity(image:Image,
@@ -368,7 +365,7 @@ def process_rois(image: Image,
         if plot_results:
             label_values = max_projection(labels_layer)
             colors = get_labels_color(label_values)
-            plot_data(deltar, colors, "time index", "lenght (px)")
+            plot_data(deltar, colors, "time index", "displacement (px)")
             plot_data(intensities, colors, "time index", "mean intensity")
             #plot_data(spectra, colors, "frequency index", "power spectrum", plot_type = 'log')
         
