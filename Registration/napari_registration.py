@@ -215,14 +215,12 @@ def register_rois(image: Image,
                     pos = _centers[:,roi_idx,:]
                     y = pos[initial_time_index,1]
                     x = pos[initial_time_index,2]
-                    all_y =pos[initial_time_index,1]
-                    all_x =pos[initial_time_index,2]
                     
                     sizey = real_roi_sy[roi_idx] 
                     sizex = real_roi_sx[roi_idx]
                     if register_entire_image:
-                        sizex = min(sx-np.amax(all_x),np.amax(all_x))*2
-                        sizey = min(sy-np.amax(all_y),np.amax(all_y))*2
+                        sizex = min(sx-x,x)*2
+                        sizey = min(sy-y,y)*2
                     
                     registered = select_rois_from_stack(stack, pos, 
                                                          [int(sizey)], [int(sizex)])
