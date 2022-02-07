@@ -43,6 +43,24 @@ def filter_image(img, sigma):
         return filtered
     else:
         return img
+    
+
+def filter_images(imgs, sigma):
+    filtered_list = []
+    for img in imgs:
+        if sigma >0:
+            sigma = (sigma//2)*2+1 # sigma must be odd in cv2
+            #filtered = cv2.GaussianBlur(img,(sigma,sigma),cv2.BORDER_DEFAULT)
+            try:
+                filtered = cv2.medianBlur(img,sigma)
+            except:
+                filtered = img
+            filtered_list.append(filtered)
+        else:
+            filtered_list.append(img) 
+    return filtered_list
+    
+    
 
 def select_rois_with_bbox(im, bboxes):
     rois = []
@@ -106,7 +124,7 @@ def select_rois_from_stack(input_stack, positions, sizesy, sizesx):
     rois = []
     #num_pos =len(positions)
     num_rois =len(sizesy)
-    
+    AMAX = 2**16-1
     for pos_idx,pos in enumerate(positions):
         sizey = sizesy[pos_idx%num_rois]
         sizex = sizesx[pos_idx%num_rois]
@@ -115,8 +133,23 @@ def select_rois_from_stack(input_stack, positions, sizesy, sizesx):
         x = int(pos[2])
         half_sizey = sizey//2
         half_sizex = sizex//2
-        rois.append(input_stack[t, y-half_sizey:y+half_sizey,
-                                   x-half_sizex:x+half_sizex])
+        #output = np.zeros([sizey,sizex])
+        output = np.take(input_stack[t,...],
+                         range(y-half_sizey,y+half_sizey),
+                         mode='wrap', axis=0)
+        output = np.take(output,
+                         range(x-half_sizex,x+half_sizex),
+                         mode='wrap', axis=1)
+        
+        # sy,sx=selected.shape
+        # output[0:sy,0:sx]=selected
+        # deltay= int(np.clip(sizey-sy,0,AMAX))
+        # deltax= int(np.clip(sizex-sx,0,AMAX))
+        # selected = np.pad(selected, 
+        #                   [deltay,deltax]
+        #                   )
+        #print(output.shape)
+        rois.append(output)
     return rois
 
 
@@ -171,7 +204,7 @@ def stack_registration(stack, z_idx, c_idx = 0, mode = 'Euclidean'):
             
             reg =  apply_warp(im, warp_matrix, sy, sx)
         except Exception as e:
-            # print(f'{e}, frame not registered')
+            print('frame not registered')
             reg = im
         
         return reg, warp_matrix 
@@ -190,12 +223,14 @@ def stack_registration(stack, z_idx, c_idx = 0, mode = 'Euclidean'):
     #register forwards
     for zi in range(z_idx+1,sz):
         ref_image = registered[zi-1,:,:]
+        ref_image = registered[z_idx,:,:]
         current_image = stack[zi,:,:]
         registered[zi,:,:],w_m = cv2_reg(ref_image, current_image, sy, sx)
         wm_list[zi] = w_m
     #register backwards
     for zi in range(z_idx-1,-1,-1):
         ref_image = registered[zi+1,:,:]
+        ref_image = registered[z_idx,:,:]
         current_image = stack[zi,:,:]
         registered[zi,:,:],w_m = cv2_reg(ref_image, current_image, sy, sx)
         wm_list[zi] = w_m
@@ -204,14 +239,14 @@ def stack_registration(stack, z_idx, c_idx = 0, mode = 'Euclidean'):
        
    
     
-def align_with_registration(next_rois, previous_rois, filter_size=3, mode ='Translation'):  
+def align_with_registration(next_rois, previous_rois, mode ='Translation'):  
     warp_mode_dct = {'Translation' : cv2.MOTION_TRANSLATION,
                      'Affine' : cv2.MOTION_AFFINE,
                      'Euclidean' : cv2.MOTION_EUCLIDEAN,
                      'Homography' : cv2.MOTION_HOMOGRAPHY
                      }
     warp_mode = warp_mode_dct[mode] 
-    
+    wm_list = []
     dx_list = []
     dy_list = []
     
@@ -222,8 +257,6 @@ def align_with_registration(next_rois, previous_rois, filter_size=3, mode ='Tran
     
     for previous_roi, next_roi in zip(previous_rois, next_rois):
       
-        previous_roi = filter_image(previous_roi, filter_size)
-        next_roi = filter_image(next_roi, filter_size)
         
         sx,sy = previous_roi.shape
         
@@ -247,8 +280,9 @@ def align_with_registration(next_rois, previous_rois, filter_size=3, mode ='Tran
         
         dx_list.append(dx)
         dy_list.append(dy)
+        wm_list.append(warp_matrix) 
     
-    return dx_list, dy_list
+    return dx_list, dy_list, wm_list
 
 
 def update_position(pos_list, dz, dx_list, dy_list ):
