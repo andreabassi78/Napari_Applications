@@ -184,7 +184,7 @@ def register_rois(image: Image,
         viewer.layers.remove(rectangles_name)
         
     def add_rois(params):
-        #try:
+        try:
             import numpy.matlib
             rectangles = params[0]
             _centers = params[1]
@@ -230,9 +230,9 @@ def register_rois(image: Image,
                     #im.translate = [0,int(y-sizey/2),int(x-sizex/2)]
                
             print('... ending registration.')
-        # except Exception as e:
-        #     print(e)
-        # finally:
+        except Exception as e:
+            print(e)
+        finally:
             register_rois.enabled = True
         
         
@@ -298,7 +298,7 @@ def calculate_intensity(image:Image,
     
     labels_data = max_projection(labels_layer)
     label_values = get_labels_values(labels_data)
-    stack = image.data
+    stack = np.array(image.data)
     locations = points_layer.data
     st, _sy, _sx = stack.shape
     _ , roi_sizey, roi_sizex = get_rois_props(labels_data)   
@@ -384,7 +384,10 @@ def process_rois(image: Image,
                           intensity = intensities,
                           spectra = spectra
                           )
-    finally: process_rois.enabled = True
+    except Exception as e:
+        print(e)
+    finally: 
+        process_rois.enabled = True
     print(f'... processed {time_frames_num} frames.')       
     
     
@@ -403,7 +406,7 @@ if __name__ == '__main__':
     
     test_label = np.zeros([sy,sx],dtype=int)
     test_label[1029:1180, 801:870] = 1
-    test_label[1320:1470, 600:670] = 7
+    #test_label[1320:1470, 600:670] = 7
    
     _labels_layer = viewer.add_labels(test_label, name='labels')
 

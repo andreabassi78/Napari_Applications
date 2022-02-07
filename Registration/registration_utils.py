@@ -114,8 +114,18 @@ def select_rois_from_image(input_image, positions, sizesy, sizesx):
         x = int(pos[2])
         half_sizey = sizey//2
         half_sizex = sizex//2
-        rois.append(input_image[y-half_sizey:y+half_sizey,
-                                x-half_sizex:x+half_sizex])
+        # output= input_image[y-half_sizey:y+half_sizey,
+        #                     x-half_sizex:x+half_sizex]
+        
+        output = np.take(input_image,
+                          range(y-half_sizey,y+half_sizey),
+                          mode='wrap', axis=0)
+        output = np.take(output,
+                          range(x-half_sizex,x+half_sizex),
+                          mode='wrap', axis=1)
+        rois.append(output)
+        
+        
     return rois
 
 
@@ -133,22 +143,17 @@ def select_rois_from_stack(input_stack, positions, sizesy, sizesx):
         x = int(pos[2])
         half_sizey = sizey//2
         half_sizex = sizex//2
-        #output = np.zeros([sizey,sizex])
-        output = np.take(input_stack[t,...],
-                         range(y-half_sizey,y+half_sizey),
-                         mode='wrap', axis=0)
-        output = np.take(output,
-                         range(x-half_sizex,x+half_sizex),
-                         mode='wrap', axis=1)
         
-        # sy,sx=selected.shape
-        # output[0:sy,0:sx]=selected
-        # deltay= int(np.clip(sizey-sy,0,AMAX))
-        # deltax= int(np.clip(sizex-sx,0,AMAX))
-        # selected = np.pad(selected, 
-        #                   [deltay,deltax]
-        #                   )
-        #print(output.shape)
+        # output = input_stack[t,
+        #                      y-half_sizey:y+half_sizey,
+        #                      x-half_sizex:x+half_sizex]
+        output = input_stack[t,:]
+        output = np.take(output,
+                          list(range(y-half_sizey,y+half_sizey)),
+                          mode='wrap', axis=0)
+        output = np.take(output,
+                          list(range(x-half_sizex,x+half_sizex)),
+                          mode='wrap', axis=1)
         rois.append(output)
     return rois
 
