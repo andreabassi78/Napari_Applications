@@ -227,7 +227,6 @@ def register_rois(image: Image,
                     registered = select_rois_from_stack(stack, pos, 
                                                          [int(sizey)], [int(sizex)])
             
-                    print(np.array(registered).shape)
                     registered_name= f'registered_{image.name}_roi{roi_idx}'
                     im = viewer.add_image(np.array(registered), name= registered_name)
                     #im.translate = [0,int(y-sizey/2),int(x-sizex/2)]
