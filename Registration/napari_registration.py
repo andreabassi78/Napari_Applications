@@ -336,32 +336,25 @@ def measure_displacement(image, roi_num, points):
     dr = np.sqrt( np.sum( (dxy)**2, axis=2) )
     return xy, deltar, dxy, dr
 
-def calculate_velocity (transposed_intensities, transposed_yx):
-    
+def calculate_velocity(intensities,yx):
     max_indices = []
     coordinates = []
-    distances = []
-    time_intervals = []
     velocities = []
     
-    for intensity_idx, intensity in enumerate(transposed_intensities):
-        max_value = max(intensity)
-        max_index = intensity.index(max_value)
-        max_indices.append(max_index)
-        max_coordinates = transposed_yx[intensity_idx][max_index]
-        coordinates.append(max_coordinates)
-        
-    rois_num = len(max_indices)
+    rois_num = intensities.shape[1]
     
-    for idx in range(0, rois_num-1):
+    max_indices = np.argmax(intensities, axis= 0)   
+    
+    for roi_idx in range(rois_num):
+        coordinates.append(yx[max_indices[roi_idx],roi_idx])    
         
-        distance  = np.sqrt( np.sum((coordinates[idx+1]-coordinates[idx])**2))
-        distances.append(distance)
-        delta_t = (max_indices[idx+1]-max_indices[idx])
-        time_intervals.append(delta_t)
-        velocity = distances[idx]/time_intervals[idx]
+    for roi_idx in range(rois_num-1):
+        distance  = np.sqrt( np.sum((coordinates[roi_idx+1]-coordinates[roi_idx])**2))
+        delta_t = (max_indices[roi_idx+1]-max_indices[roi_idx])
+        print(distance, delta_t)
+        velocity = distance/delta_t
         velocities.append(velocity)
-    
+   
     return velocities
 
 @magicgui(call_button="Process registered ROIs")
@@ -383,11 +376,10 @@ def process_rois(image: Image,
         intensities = calculate_intensity(image, roi_num, 
                                           registered_points,
                                           labels_layer)
-        transposed_intensities = [list(i) for i in zip(*intensities)]
         yx, deltar, dyx, dr = measure_displacement(image, roi_num, registered_points)
-        transposed_yx = [list(i) for i in zip(*yx)]
-        velocities = calculate_velocity (transposed_intensities, transposed_yx)
-        print(velocities)
+
+        velocities = calculate_velocity(intensities, yx)
+        print('Velocities:', velocities)
         
         if correct_photobleaching:
             intensities = correct_decay(intensities)
@@ -413,7 +405,7 @@ def process_rois(image: Image,
                           spectra = spectra
                           )
     except Exception as e:
-        print(e)
+        raise(e)
     finally: 
         process_rois.enabled = True
     print(f'... processed {time_frames_num} frames.')       
@@ -434,7 +426,7 @@ if __name__ == '__main__':
     
     test_label = np.zeros([sy,sx],dtype=int)
     test_label[1029:1180, 801:870] = 1
-    # test_label[1320:1470, 600:670] = 7
+    test_label[1320:1470, 600:670] = 7
    
     _labels_layer = viewer.add_labels(test_label, name='labels')
 
