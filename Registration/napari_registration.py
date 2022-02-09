@@ -155,7 +155,7 @@ def register_rois(image: Image,
                     median_filter_size:int = 3,
                     scale = 0.5,
                     bbox_zoom = 2,
-                    show_registered_stack:bool = True,
+                    show_registered_stack:bool = False,
                     register_entire_image:bool = False
                     ):
     '''
@@ -379,7 +379,7 @@ def process_rois(image: Image,
         yx, deltar, dyx, dr = measure_displacement(image, roi_num, registered_points)
 
         velocities = calculate_velocity(intensities, yx)
-        print('Velocities:', velocities)
+        print('Velocities:', *velocities)
         
         if correct_photobleaching:
             intensities = correct_decay(intensities)
@@ -426,7 +426,7 @@ if __name__ == '__main__':
     
     test_label = np.zeros([sy,sx],dtype=int)
     test_label[1029:1180, 801:870] = 1
-    test_label[1320:1470, 600:670] = 7
+    # test_label[1320:1470, 600:670] = 7
    
     _labels_layer = viewer.add_labels(test_label, name='labels')
 
