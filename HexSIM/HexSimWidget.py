@@ -188,7 +188,6 @@ class HexSimAnalysis(QWidget):
         self.rescaleZ()
         self.center_image(im_layer)
         self.viewer.dims.axis_labels = ('phase','z','y','c')
-       
             
     def select_layer(self, image: Image):
         

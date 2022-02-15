@@ -105,6 +105,6 @@ class MyWidget(QWidget):
 if __name__ == '__main__':
    
     viewer = napari.Viewer()
-    a = MyWidget(viewer)
-    viewer.window.add_dock_widget(a, name = 'my first widget')
+    mywidget = MyWidget(viewer)
+    viewer.window.add_dock_widget(mywidget, name = 'my first widget')
     napari.run() 

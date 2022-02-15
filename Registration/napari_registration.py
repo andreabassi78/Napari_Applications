@@ -156,7 +156,8 @@ def register_rois(image: Image,
                     scale = 0.5,
                     bbox_zoom = 2,
                     show_registered_stack:bool = False,
-                    register_entire_image:bool = False
+                    register_entire_image:bool = False,
+                    initial_time_index:int = 0,
                     ):
     '''
     Registers rectangular rois chosen on image as the bound box of the labels.
@@ -169,6 +170,7 @@ def register_rois(image: Image,
     label_colors = get_labels_color(label_values)
     labels = max_projection(labels_layer)
     initial_time_index = viewer.dims.current_step[0]
+    register_rois.initial_time_index.value = initial_time_index
     real_initial_positions, real_roi_sy, real_roi_sx = get_rois_props(labels, 
                                                                       initial_time_index,
                                                                       bbox_zoom) 
@@ -223,10 +225,11 @@ def register_rois(image: Image,
                     registered_roi_name= f'registered_{image.name}_roi{roi_idx}'
                     if registered_roi_name in viewer.layers:
                             viewer.layers.remove(registered_roi_name)
-                    im = viewer.add_image(np.array(registered), name= registered_roi_name)
+                    viewer.add_image(np.array(registered), name= registered_roi_name)
                     #im.translate = [0,int(y-sizey/2),int(x-sizex/2)]
                
             print('... ending registration.')
+    
         
         
     @thread_worker(connect={'returned':add_rois})
@@ -278,7 +281,7 @@ def register_rois(image: Image,
         finally:
             register_rois.enabled = True       
         return (rectangles, centers)
-    _register_rois()    
+    _register_rois() 
     
     
     
@@ -292,7 +295,7 @@ def calculate_intensity(image:Image,
     within rectangular Rois of size roi_size, centered in points_layer,
     taking into account only the pixels that are in one of the labels of labels_layer
     """
-    
+    initial_time_index = register_rois.initial_time_index.value
     labels_data = max_projection(labels_layer)
     label_values = get_labels_values(labels_data)
     stack = np.array(image.data)
@@ -300,11 +303,16 @@ def calculate_intensity(image:Image,
     st, _sy, _sx = stack.shape
     _ , roi_sizey, roi_sizex = get_rois_props(labels_data)   
     rois = select_rois_from_stack(stack, locations, roi_sizey, roi_sizex)
-    label_rois = select_rois_from_image(labels_data, locations[0:roi_num], roi_sizey,roi_sizex)
+    initial_location = initial_time_index*roi_num
+    label_rois = select_rois_from_image(labels_data,
+                                        locations[initial_location:initial_location+roi_num],
+                                        roi_sizey, roi_sizex)
+    # TODO use correct location, related to the reference plane
     
     intensities = np.zeros([st, roi_num])
     for time_idx in range(st):
         for roi_idx in range(roi_num):
+            
             label_value = label_values[roi_idx]
             mask_indexes = label_rois[roi_idx] == label_value 
             global_idx = roi_idx + time_idx*roi_num
@@ -351,7 +359,7 @@ def calculate_velocity(intensities,yx):
     for roi_idx in range(rois_num-1):
         distance  = np.sqrt( np.sum((coordinates[roi_idx+1]-coordinates[roi_idx])**2))
         delta_t = (max_indices[roi_idx+1]-max_indices[roi_idx])
-        print(distance, delta_t)
+        #print(distance, delta_t)
         velocity = distance/delta_t
         velocities.append(velocity)
    
@@ -412,6 +420,7 @@ def process_rois(image: Image,
     
     
 if __name__ == '__main__':
+    pass
     
     viewer = napari.Viewer()
     
@@ -436,6 +445,7 @@ if __name__ == '__main__':
                                   area='right', add_vertical_stretch=True)
     viewer.window.add_dock_widget(register_rois, name = 'ROIs Registration',
                                   area='right', add_vertical_stretch=True)
+    register_rois.initial_time_index.visible =False
     viewer.window.add_dock_widget(process_rois, name = 'Processing',
                                   area='right')
     warnings.filterwarnings('ignore')

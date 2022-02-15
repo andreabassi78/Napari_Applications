@@ -15,7 +15,7 @@ import os
     slider_float={"widget_type": "FloatSlider", 'max': 10},
     dropdown={"choices": ['first', 'second', 'third']},
 )
-def widget_demo(
+def my_ui(
     maybe: bool,
     some_int: int,
     spin_float=3.14159,
@@ -29,7 +29,6 @@ def widget_demo(
     
     return(some_int*3)
     
-widget_demo.show()
-a = widget_demo(True, 2)
-print(a)
+my_ui.show()
+
     
