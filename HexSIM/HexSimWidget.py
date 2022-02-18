@@ -20,7 +20,6 @@ from  registration_tools import stack_registration
 
 MYPATH ='C:\\Users\\andrea\\OneDrive - Politecnico di Milano\\Data\\PROCHIP\\DatasetTestNapari\\220114_113154_PROCHIP_SIM_ROI.h5'
 
-
 class HexSimAnalysis(QWidget):
     
     name = 'HexSIM_Analysis'
@@ -187,7 +186,7 @@ class HexSimAnalysis(QWidget):
         im_layer = self.show_image(stack, fullname=fullname)
         self.rescaleZ()
         self.center_image(im_layer)
-        self.viewer.dims.axis_labels = ('phase','z','y','c')
+        self.viewer.dims.axis_labels = ('phase','z','y','x')
             
     def select_layer(self, image: Image):
         
