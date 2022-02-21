@@ -2,14 +2,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy import pi
 
-from baseSimProcessor import BaseSimProcessor
+from SIM_processing.baseSimProcessor import BaseSimProcessor
 
-class HexSimProcessor(BaseSimProcessor):
+class ConvSimProcessor(BaseSimProcessor):
     '''
-    Implements hexagonal SIM illumination with three beams, seven phase steps
+    Implements conventional SIM system with two beams, three angles and three phase steps
     '''
     def __init__(self):
-        self._nsteps = 7
+        self._nsteps = 9
         self._nbands = 3
         self.usePhases = False  # can be overridden before calibration
 
@@ -26,12 +26,26 @@ class HexSimProcessor(BaseSimProcessor):
         carrier components
         '''
         if phi is None:
-            phase_matrix = (2 * pi / self._nsteps) * (
-                        (np.arange(0, self._nsteps)[:, np.newaxis]) * np.arange(0, self._nbands + 1))
-            phase_matrix = np.append(phase_matrix, -phase_matrix[:, 1:], axis=1)
+            phi = np.array([0, 2 * pi / 3, 4 * pi / 3])
+            phase_matrix = np.zeros((9,7))
+            phase_matrix[0:3,1] = phi
+            phase_matrix[0:3,4] = -phi
+            phase_matrix[3:6,2] = phi
+            phase_matrix[3:6,5] = -phi
+            phase_matrix[6:9,3] = phi
+            phase_matrix[6:9,6] = -phi
         else:
             phase_matrix = np.append(np.append(np.zeros((self._nsteps, 1)), phi.T, axis = 1), -phi.T, axis=1)
-        if self.debug:
-            print(phase_matrix)
-        return np.complex64(np.exp(1j * phase_matrix))
+        ret = np.complex64(np.exp(1j * phase_matrix))
+        ret[3:9,(1,4)] = 0
+        ret[0:3,(2,5)] = 0
+        ret[6:9,(2,5)] = 0
+        ret[0:6,(3,6)] = 0
+        if self.debug > 1:
+            print(ret)
+            print(np.angle(ret))
+            plt.figure()
+            plt.title('Matrix')
+            plt.imshow(np.abs(ret))
+        return ret
 
