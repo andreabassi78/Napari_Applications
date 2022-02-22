@@ -60,10 +60,7 @@ class HexSIM_MultipleStack():
         
     def select_h5_file(self, path: pathlib.Path = MYPATH ):    
         self.h5path = path
-        
-        
         print(f'h5 path:{path}')
-        
         
         
     def process_all_stacks(self, group:int = 10): 
@@ -183,6 +180,7 @@ class HexSIM_MultipleStack():
         imageWFdata = np.mean(self.get_imageRaw(), axis=0)
         imname = 'WF_' + self.imageRaw_name
         sz,sy,sx = imageWFdata.shape
+   
         
     def stack_reconstruction(self, hyperstack):
                
