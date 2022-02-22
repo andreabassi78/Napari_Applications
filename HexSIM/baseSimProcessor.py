@@ -813,7 +813,7 @@ class BaseSimProcessor:
         cross_corr_result = xp.sum(p * p0 * xp.outer(
                         phase_shift_to_ypeak, phase_shift_to_xpeak), axis = (1,2)) * scaling
 
-        if self.debug > 1:
+        if self.debug : # TODO remove >1 
             plt.figure()
             plt.title('Find phase')
             if useTorch:
@@ -876,7 +876,7 @@ class BaseSimProcessor:
             ax = plt.gca()
             circle = plt.Circle((pxc0, pyc0), color = 'red', fill = False)
             ax.add_artist(circle)
-
+        self.ixf = ixf # TODO add this 
         return kx, ky
 
     def _refineCarrier(self, band0, band1, kx_in, ky_in):
@@ -897,16 +897,16 @@ class BaseSimProcessor:
         band1_common = fft.ifft2(fft.fft2(np.conjugate(band1)) / otf * otf_mask_for_band_common_freq)
 
         band = band0_common * band1_common
-
+        ixf = np.abs(fft.fftshift(fft.fft2(fft.fftshift(band)))) # TODO move this
         if self.debug:
-            ixf = np.abs(fft.fftshift(fft.fft2(fft.fftshift(band))))
+               
             plt.figure()
             plt.title('Find carrier')
             plt.imshow(ixf, cmap = plt.get_cmap('gray'))
             ax = plt.gca()
             circle = plt.Circle((pxc0, pyc0), color = 'red', fill = False)
             ax.add_artist(circle)
-
+        self.ixf = ixf # TODO add this    
         mag = 25 * self.N / 256
         ixfz, Kx, Ky = self._zoomf(band, self.N, np.single(self._k[pxc0]), np.single(self._k[pyc0]), mag , self._dk * self.N)
         pyc, pxc = self._findPeak(abs(ixfz))

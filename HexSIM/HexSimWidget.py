@@ -95,8 +95,8 @@ class HexSimAnalysis(QWidget):
                                      layout=slayout, 
                                      write_function = self.setReconstructor)
         
-        self.cleanup = Settings('cleanup', dtype=bool, initial=True, layout=slayout, 
-                          write_function = self.setReconstructor)
+        # self.cleanup = Settings('cleanup', dtype=bool, initial=True, layout=slayout, 
+        #                   write_function = self.setReconstructor)
         self.usemodulation = Settings('usemodulation', dtype=bool, initial=False,
                                       layout=slayout, write_function = self.setReconstructor)
         self.axial = Settings('axial', dtype=bool, initial=False, layout=slayout, 
@@ -134,8 +134,8 @@ class HexSimAnalysis(QWidget):
                                      write_function = self.setReconstructor)
         self.debug = Settings('debug', dtype=bool, initial=False, layout=blayout,
                           write_function = self.setReconstructor) 
-        self.gpu = Settings('gpu', dtype=bool, initial=False, layout=blayout, 
-                          write_function = self.setReconstructor) 
+        # self.gpu = Settings('gpu', dtype=bool, initial=False, layout=blayout, 
+        #                   write_function = self.setReconstructor) 
         self.compact = Settings('compact', dtype=bool, initial=False, layout=blayout, 
                           write_function = self.setReconstructor) 
         
@@ -314,7 +314,6 @@ class HexSimAnalysis(QWidget):
         
         self.h.usePhases = self.use_phases.val
         self.h.debug = self.debug.val
-        self.h.cleanup = self.cleanup.val
         self.h.axial = self.axial.val
         self.h.usemodulation = self.usemodulation.val
         self.h.magnification = self.magnification.val
@@ -355,31 +354,36 @@ class HexSimAnalysis(QWidget):
         """
         Calculates the crosscorrelation of the low and high pass filtered version of the raw image
         """
-        if self.showXcorr.val == True:
-            img = self.get_current_image()
-            N = len(img[0, ...])
-            _kr, _dk = self.calculate_kr(N)
-            M = np.exp(1j * 2 * np.pi / 3) ** ((np.arange(0, 2)[:, np.newaxis]) * np.arange(0, 3))
-    
-            sum_prepared_comp = np.zeros((2, N, N), dtype=np.complex64)
-            
-            for k in range(0, 2):
-                for l in range(0, 3):
-                    sum_prepared_comp[k, ...] = sum_prepared_comp[k, ...] + img[l, ...] * M[k, l]
-            
-            band0 = sum_prepared_comp[0, ...]
-            band1 = sum_prepared_comp[1, ...]
-            
-            otf_exclude_min_radius = self.h.eta/2 # Min Radius of the circular region around DC that is to be excluded from the cross-correlation calculation
-            maskhpf = fftshift(_kr > otf_exclude_min_radius)
-            
-            band0_common = ifft2(fft2(band0)*maskhpf)
-            # band1_common = ifft2(fft2(band1)*maskhpf)
-            ix = band0_common * band1
-            ixf = np.abs(fftshift(fft2(fftshift(ix))))
+        if self.showXcorr.val and self.isCalibrated:
+            ixf = self.h.ixf
             pyc0, pxc0 = self.h._findPeak(ixf )
             imname = 'Xcorr_' + self.imageRaw_name
             self.show_image(ixf, imname, hold = True)
+        # if self.showXcorr.val == True:
+        #     img = self.get_current_image()
+        #     N = len(img[0, ...])
+        #     _kr, _dk = self.calculate_kr(N)
+        #     M = np.exp(1j * 2 * np.pi / 3) ** ((np.arange(0, 2)[:, np.newaxis]) * np.arange(0, 3))
+    
+        #     sum_prepared_comp = np.zeros((2, N, N), dtype=np.complex64)
+            
+        #     for k in range(0, 2):
+        #         for l in range(0, 3):
+        #             sum_prepared_comp[k, ...] = sum_prepared_comp[k, ...] + img[l, ...] * M[k, l]
+            
+        #     band0 = sum_prepared_comp[0, ...]
+        #     band1 = sum_prepared_comp[1, ...]
+            
+        #     otf_exclude_min_radius = self.h.eta/2 # Min Radius of the circular region around DC that is to be excluded from the cross-correlation calculation
+        #     maskhpf = fftshift(_kr > otf_exclude_min_radius)
+            
+        #     band0_common = ifft2(fft2(band0)*maskhpf)
+        #     # band1_common = ifft2(fft2(band1)*maskhpf)
+        #     ix = band0_common * band1
+        #     ixf = np.abs(fftshift(fft2(fftshift(ix))))
+        #     pyc0, pxc0 = self.h._findPeak(ixf )
+        #     imname = 'Xcorr_' + self.imageRaw_name
+        #     self.show_image(ixf, imname, hold = True)
             
      
     def calculate_kr(self,N):       
@@ -395,17 +399,14 @@ class HexSimAnalysis(QWidget):
         
     def plot_carrier(self): 
         if self.showCarrier.val and self.isCalibrated:
+            print('plot carrier executed')
             kxs = self.h.kx
             kys = self.h.ky
             N = self.h.N
-            from collections.abc import Iterable
-            if not isinstance(kxs, Iterable):
-                kxs = [kxs]
-                kys = [kys]
             _kr, _dk = self.calculate_kr(N)
             for idx, (kx,ky) in enumerate(zip(kxs,kys)):
-                pxc0 = -kx / _dk + N/2
-                pyc0 = -ky / _dk + N/2
+                pxc0 = kx[idx] / _dk + N/2
+                pyc0 = ky[idx] / _dk + N/2
                 self.add_point( (pyc0, pxc0), str(idx), color = 'red')
                 
     
@@ -458,12 +459,10 @@ class HexSimAnalysis(QWidget):
             data = data[:,zmin:zmax,:,:]
 
             selected_imRaw = np.swapaxes(data, 0, 1).reshape((sp * new_delta, sy, sx))
-            if self.gpu.val:
-                self.h.calibrate_cupy(selected_imRaw, self.find_carrier.val)       
-            else:
-                self.h.calibrate(selected_imRaw,self.find_carrier.val)          
+            
+            self.h.calibrate(selected_imRaw,self.find_carrier.val)          
             self.isCalibrated = True
-            self.check_checkboxes()
+            #self.check_checkboxes()
             if self.find_carrier.val: # store the value found   
                 self.kx_input = self.h.kx  
                 self.ky_input = self.h.ky
@@ -474,12 +473,9 @@ class HexSimAnalysis(QWidget):
     def standard_reconstruction(self):  
         current_imageRaw = self.get_current_image()
         if self.isCalibrated:
-                
-            if self.gpu.val:
-                imageSIM = self.h.reconstruct_cupy(current_imageRaw)
-    
-            elif not self.gpu.val:
-                imageSIM = self.h.reconstruct_rfftw(current_imageRaw)
+            print('recon executed')   
+            
+            imageSIM = self.h.reconstruct_rfftw(current_imageRaw)
             
             imname = 'SIM_' + self.imageRaw_name
             self.show_image(imageSIM, fullname=imname, scale=[0.5,0.5], hold =True)
@@ -508,7 +504,15 @@ class HexSimAnalysis(QWidget):
             for zidx in range(sz):
                 phases_stack = hyperstack[:,zidx,:,:]
                 if self.keep_calibrating.val:
-                    self.h.calibrate(phases_stack, self.find_carrier.val)   
+                    delta = self.group.val // 2
+                    remainer = self.group.val % 2
+                    zmin = max(zidx-delta,0)
+                    zmax = min(zidx+delta+remainer,sz)
+                    new_delta = zmax-zmin
+                    data = hyperstack[:,zmin:zmax,:,:]
+                    selected_imRaw = np.swapaxes(data, 0, 1).reshape((sp * new_delta, sy, sx))
+                    self.h.calibrate(selected_imRaw,self.find_carrier.val)   
+ 
                 stackSIM[zidx,:,:] = self.h.reconstruct_rfftw(phases_stack)
             return stackSIM
         
@@ -591,7 +595,8 @@ class HexSimAnalysis(QWidget):
     def find_3phaseshifts(self):
         phase, _ = self.h.find_phase(self.h.kx,self.h.ky,self.get_current_image())
         expected_phase = np.arange(0,2*np.pi ,2*np.pi / 3)
-        phaseshift= np.unwrap(phase - expected_phase) - phase[0]
+        #phaseshift= np.unwrap(phase - expected_phase) - phase[0]
+        phaseshift = np.unwrap(phase) - phase[0]
         error = phaseshift-expected_phase
         data_to_plot = np.array([expected_phase, phaseshift, error])
         symbols = ['.','o','|']
