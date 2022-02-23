@@ -11,15 +11,16 @@ import os
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 
-def Diffusion(t_and_grp, p, t0, A0, A1, c0, c1):
+def Diffusion(times, p, t00, t01,  A0, A1, c0, c1):
     
-    t = t_and_grp[:,0]
-    grp_id = t_and_grp[:,1]
-    A = np.array([[A0,A1][int(gid)] for gid in grp_id])
-    c = np.array([[c0,c1][int(gid)] for gid in grp_id])
-    
+    t = times
+    t0 = np.array((t00,t01))
+    A = np.array((A0,A1))
+    # p = np.array((p0,p1)) 
+    c = np.array((c0,c1)) 
     i = A/np.sqrt(t-t0)*np.exp(-p/(t-t0)) + c
-    return i
+    
+    return i.ravel()
 
 def take_excel_data(excel_file):
 
@@ -44,51 +45,36 @@ def take_excel_data(excel_file):
     return t_indices_array, yx_array, intensities_array
 
 if __name__ == '__main__':
-    
-    pass
-    
-    intensities_lists = []
-    t_indices_lists = []
-    
+     
     t_max = 7
     t_min = -3
     
+    guess = [2.4, 37, 40, 2500, 1700, -500, -300]
+    
     excel_file = os.getcwd() +'\\test7.xlsx'
+    
     t_indices_array, yx_array, intensities_array = take_excel_data(excel_file)
     
-    guess = [3, 33, 3500, 1300, -700, -300]
-    
     max_indices = np.argmax(intensities_array, axis= 0)
-    
     rois_num = intensities_array.shape[1]
+    intensities_array = intensities_array - intensities_array[0,:]
     
+    times = np.zeros([t_max-t_min, rois_num],dtype=int)
+    intensities = np.zeros([t_max-t_min, rois_num])
     
-    for roi_idx in range (rois_num):
+    for roi_idx in range(rois_num):    
         
-        intensities_array[...,roi_idx] = intensities_array[...,roi_idx] - (intensities_array[0, roi_idx])  
-        intensities_data = intensities_array[max_indices[roi_idx]+t_min:max_indices[roi_idx]+t_max, roi_idx]
-        t_indices_data = t_indices_array[max_indices[roi_idx]+t_min:max_indices[roi_idx]+t_max, roi_idx]
-        if roi_idx == 0:
-            intensities= intensities_data
-            t_indices = t_indices_data
-        else:
-            intensities_all = np.concatenate((intensities,intensities_data))
-            t_indices_all = np.concatenate((t_indices,t_indices_data))
-        
+        times[:,roi_idx] = t_indices_array[max_indices[roi_idx]+t_min:max_indices[roi_idx]+t_max, roi_idx]
+        intensities[:,roi_idx] = intensities_array[times[:,roi_idx],roi_idx]
+          
+    parameters, covariance = curve_fit(Diffusion, times, intensities.ravel(), p0 = guess)
+    print('parameters:', parameters)
     
-    t_and_grp_all = np.zeros((t_indices_all.size, 2))
-    t_and_grp_all[:,0] = t_indices_all 
-    t_and_grp_all[0:10, 1] = 0
-    t_and_grp_all[10:20, 1] = 1
-    
-    parameters, covariance = curve_fit(Diffusion, t_and_grp_all, intensities_all, p0 = guess)
-    #print('parameters:', parameters)
-    
-    #for gid,color, roi_idx in zip([0,1],['r','k'], range(rois_num)):
     plt.plot(t_indices_array, intensities_array, 'o', label='data')
-    # A = parameters[3+gid]
-    # t_and_grp = np.column_stack([t_and_grp_all, np.ones_like(t_and_grp_all)*gid])
-    plt.plot(t_and_grp_all[:,0], Diffusion(t_and_grp_all, *parameters),
+    
+    fitted_intensities = Diffusion(times, *parameters)
+    fitted_intensities = np.reshape(fitted_intensities, intensities.shape)
+    plt.plot(times, fitted_intensities,
               linestyle='dashed', label='fit')
 
     plt.xlabel('t_index')
