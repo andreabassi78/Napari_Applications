@@ -63,7 +63,7 @@ class HexSIM_MultipleStack():
         print(f'h5 path:{path}')
         
         
-    def process_all_stacks(self, group:int = 10): 
+    def process_all_stacks(self, register_stack:bool = False, group:int = 10): 
         
         def show_sim_reconstruction(params):
             stack = params[0]
@@ -96,7 +96,13 @@ class HexSIM_MultipleStack():
                                       wavelength = wavelength)
                 
                 SIMstack = self.stack_reconstruction(hyperstack)
-                yield (SIMstack,dataset_idx)
+                
+                if register_stack:
+                    frame_idx = SIMstack.shape[0]//2
+                    SIMstack = stack_registration(SIMstack, z_idx=frame_idx, c_idx=0, method = 'cv2', mode='Euclidean')
+
+                yield (SIMstack, dataset_idx)
+                
             print(f'Processed {len(self.datasets)} stacks')
         _process_all_stacks()
            
@@ -215,7 +221,12 @@ class HexSIM_MultipleStack():
 
         table = pd.DataFrame([vals] , columns = headers )
         print(table)
+    
         
+    
+    
+    
+    
         
     def register_stack(self,image:Image, mode='Euclidean'):
     
