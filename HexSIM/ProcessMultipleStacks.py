@@ -96,10 +96,12 @@ class HexSIM_MultipleStack():
                                       wavelength = wavelength)
                 
                 SIMstack = self.stack_reconstruction(hyperstack)
+                print(f'Reconstruction of dataset {dataset_idx} completed')
                 
                 if register_stack:
                     frame_idx = SIMstack.shape[0]//2
                     SIMstack = stack_registration(SIMstack, z_idx=frame_idx, c_idx=0, method = 'cv2', mode='Euclidean')
+                    print(f'Registration of dataset {dataset_idx} completed')
 
                 yield (SIMstack, dataset_idx)
                 
@@ -220,7 +222,7 @@ class HexSIM_MultipleStack():
                 self.h.p,self.h.ampl]
 
         table = pd.DataFrame([vals] , columns = headers )
-        print(table)
+        #print(table)
     
         
     

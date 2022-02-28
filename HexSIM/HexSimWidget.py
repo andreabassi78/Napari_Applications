@@ -258,6 +258,7 @@ class HexSimAnalysis(QWidget):
                                             interpolation = 'bilinear')
             return layer
     
+    
     def get_imageRaw(self):
         try:
             return self.viewer.layers[self.imageRaw_name].data
@@ -359,6 +360,7 @@ class HexSimAnalysis(QWidget):
             pyc0, pxc0 = self.h._findPeak(ixf )
             imname = 'Xcorr_' + self.imageRaw_name
             self.show_image(ixf, imname, hold = True)
+       
         # if self.showXcorr.val == True:
         #     img = self.get_current_image()
         #     N = len(img[0, ...])
@@ -444,7 +446,6 @@ class HexSimAnalysis(QWidget):
         sz,sy,sx = imageWFdata.shape
         self.viewer.dims.current_step = (sz//2,sy//2,sx//2) #centered in the 3 projections
 
-    
     
     def calibration(self):  
         if hasattr(self, 'h'):
@@ -643,7 +644,14 @@ class HexSimAnalysis(QWidget):
 
         table = pd.DataFrame([vals] , columns = headers )
         print(table)
+    
+    def make_layers_visible(self, *layers_list):
         
+        for layer in self.viewer.layers:
+            if layer in layers_list:
+                layer.visible = True
+            else:
+                layer.visible = False    
         
     def register_stack(self,image:Image, mode='Euclidean'):
     
@@ -656,24 +664,113 @@ class HexSimAnalysis(QWidget):
         
         @thread_worker(connect={'returned': add_image})
         def _register_stack():
+            import warnings
+            warnings.filterwarnings('ignore')
             frame_idx = self.frame_index.val
             stack = image.data
             registered = stack_registration(stack, z_idx=frame_idx, c_idx=0, method = 'cv2', mode=mode)
             return registered
             
         _register_stack() 
+    
+    def segment(self,
+                image_layer:Image,
+                find_thresold:bool = True,
+                thresold:int = 0,
+                median_filter_size:int = 2,
+                erosion_size:int = 4,
+                remove_smaller_than:int = 6,
+                fill_holes:bool = True,
+                smooth_size:int = 3,
+                show_labels:bool = True                
+                ):
+        
+        from scipy import ndimage as ndi
+        from skimage.filters import threshold_otsu, threshold_li, threshold_yen, threshold_local, threshold_mean
+        from skimage.segmentation import clear_border
+        from skimage.measure import label
+        from skimage.morphology import erosion, dilation, closing, opening, cube, ball, remove_small_objects, remove_small_holes
+   
+        def add_labels(data):
+            label_name = f'segmentation_{image_layer.name}'
+            
+            if  label_name in self.viewer.layers:
+                self.viewer.layers[label_name].data = data 
+            else:  
+                self.viewer.add_labels(data, 
+                                scale = image_layer.scale,
+                                name = label_name)
+            
+            self.make_layers_visible(self.viewer.layers[label_name], image_layer)
+            self.viewer.layers.selection = [image_layer]
+            #self.viewer.scale_bar.visible = True
+            print('Segmentation completed')
+        
+        @thread_worker(connect={'returned': add_labels})
+        def _segment():
+            import warnings
+            warnings.filterwarnings('ignore')
+            
+            if image_layer.ndim == 4:
+                
+                #current_step = self.viewer.dims.current_step
+                data= np.array(image_layer.data)[0,...]
+            
+            elif image_layer.ndim ==3:
+            # #     #current_step = self.viewer.dims.current_step
+                data= np.array(image_layer.data)
+            else:
+                 raise(ValueError('image layer dimensionality not supported'))
+            
+            if find_thresold:
+               thres = threshold_otsu(data)
+               
+               segment_widget.thresold.value = thres   
+            else:
+                thres = thresold
+            # print(f'{thres=}')
+            bw = data > thres
+            #bw = clear_border(bw)
+            
+            if erosion_size > 0:
+                structure = ball(erosion_size)
+                ssz,ssy,ssx = structure.shape
+                im_scale = image_layer.scale
+                structure = np.resize(structure, [max(int(im_scale[2]/im_scale[1]*ssz),1), ssy, ssx])
+                bw = erosion(bw, structure)
+            
+            if remove_smaller_than > 0:
+                bw = remove_small_objects(bw, min_size=remove_smaller_than**3)
+            
+            if fill_holes:
+                bw = ndi.binary_fill_holes(bw)
+                
+            if smooth_size>0:
+                sphere= ball(smooth_size)
+                bw = dilation(bw, sphere)
+                bw = erosion(bw, sphere)
+            
+            if show_labels:
+                labels_stack = label(bw)
+            else:
+                labels_stack = bw
+            
+            return (labels_stack)    
+    
+        _segment()
 
        
 if __name__ == '__main__':
     file = 'test.tif'
     viewer = napari.Viewer()
-    viewer.open(file)
+    #viewer.open(file)
     widget = HexSimAnalysis(viewer)
     mode={"choices": ['Translation','Affine','Euclidean','Homography']}
     registration = magicgui(widget.register_stack, call_button='Register stack', mode=mode)
     selection = magicgui(widget.select_layer, auto_call=True )# call_button='Select image layer')
     h5_opener = magicgui(widget.open_h5_dataset, call_button='Open h5 dataset')
     resolution = magicgui(widget.estimate_resolution, call_button='Estimate resolution')
+    # segment_widget = magicgui(widget.segment, call_button='Run segmentation')
     
     viewer.window.add_dock_widget(h5_opener,
                                   name = 'H5 file selection',
@@ -694,5 +791,9 @@ if __name__ == '__main__':
     viewer.window.add_dock_widget(resolution,
                                   name = 'Resolution estimation',
                                   add_vertical_stretch = True)
+    # segment_widget.thresold.max = 2**16
+    # viewer.window.add_dock_widget(segment_widget,
+    #                               name = '3D segmentation',
+    #                               add_vertical_stretch = True)
     
     napari.run()      

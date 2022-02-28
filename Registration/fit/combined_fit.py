@@ -43,6 +43,7 @@ def concatenate(arrays_list):
 def Diffusion(times, t0, r0, r1, p0, p1, v0, v1, A0, A1):
 
     #t0 = np.array((t0,t1)) 
+    t0=30
     
     v_list = (v0,v1)
     A_list = (A0,A1)
@@ -73,7 +74,7 @@ def Diffusion(times, t0, r0, r1, p0, p1, v0, v1, A0, A1):
 
 if __name__ == '__main__':
     
-    guess = [30, 60, 45, 0.1, 1.5, 30, 4, 854, 882]
+    guess = [30, 50, 45, 1.5, 1.5, 50, 4, 854, 882]
     #guess = [0.5, 0.4, 0.1, 1, 0.1, 0.2, 0, 0]
     
     excel_file = os.getcwd() +'\\test10.xlsx'
@@ -135,8 +136,8 @@ if __name__ == '__main__':
         intensities.append(intensities_array[tis,roi_idx])
            
     # parameters, covariance = curve_fit(Diffusion, concatenate(times),
-    #                                       concatenate(intensities),
-    #                                       p0 = guess)
+    #                                      concatenate(intensities),
+    #                                      p0 = guess)
     
     parameters = guess
     print(*parameters)
