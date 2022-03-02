@@ -58,7 +58,7 @@ def Diffusion(times, t0, r0, r1, p0, p1, v0, v1, A0, A1):
     i_list = []
     starting_time = 0
     for roi_idx in range(len(samples_num)):
-        t0 = 32 # t00 #= t0_list[roi_idx]
+        #t0 = 32 # t00 #= t0_list[roi_idx]
         delta_t = samples_num[roi_idx]
         t = times[starting_time:starting_time+delta_t] - t0
         A = A_list[roi_idx]
@@ -74,7 +74,7 @@ def Diffusion(times, t0, r0, r1, p0, p1, v0, v1, A0, A1):
 
 if __name__ == '__main__':
     
-    guess = [30, 50, 45, 1.5, 1.5, 50, 4, 854, 882]
+    guess = [30, 10, 10, 0.5, 0.5, 4, 2, 854, 854]
     #guess = [0.5, 0.4, 0.1, 1, 0.1, 0.2, 0, 0]
     
     excel_file = os.getcwd() +'\\test10.xlsx'
@@ -90,6 +90,8 @@ if __name__ == '__main__':
     d= (d0,d1)
     
     rois_num = intensities_array.shape[1]
+    
+    
     intensities_array = intensities_array - intensities_array[0,:]
     
     max_indices = np.argmax(intensities_array, axis= 0)
@@ -135,15 +137,19 @@ if __name__ == '__main__':
         samples_num.append(len(tis))
         intensities.append(intensities_array[tis,roi_idx])
            
-    # parameters, covariance = curve_fit(Diffusion, concatenate(times),
-    #                                      concatenate(intensities),
-    #                                      p0 = guess)
+    parameters, covariance = curve_fit(Diffusion, concatenate(times),
+                                          concatenate(intensities),
+                                          p0 = guess)
     
-    parameters = guess
+    #parameters = guess
     print(*parameters)
+
+  
     
     fig = plt.figure(figsize=(4,3), dpi=150)
     ax = fig.add_subplot(111)
+
+    
     ax.plot(t_indices_array, intensities_array,
              '-o', label='data',
              markersize=2,

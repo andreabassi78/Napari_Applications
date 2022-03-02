@@ -13,13 +13,13 @@ from napari.qt.threading import thread_worker
 from hexSimProcessor import HexSimProcessor
 from simProcessor import SimProcessor 
 from magicgui import magicgui
-from widget_settings import Settings, add_timer
+from widget_settings import Settings, add_timer, add_timer_to_function
 import warnings
 import pathlib
 from  registration_tools import stack_registration
 
-MYPATH ='C:\\Users\\andrea\\OneDrive - Politecnico di Milano\\Data\\PROCHIP\\DatasetTestNapari\\220114_113154_PROCHIP_SIM_ROI.h5'
-
+#MYPATH ='C:\\Users\\andrea\\OneDrive - Politecnico di Milano\\Data\\PROCHIP\\DatasetTestNapari\\220114_113154_PROCHIP_SIM_ROI.h5'
+MYPATH ='C:\\Users\\andrea\\OneDrive - Politecnico di Milano\\Data\\PROCHIP\\DatasetTestNapari\\220218_145747_PROCHIP_SIM_ROI_dts_00_05_30_33.h5'
 class HexSimAnalysis(QWidget):
     
     name = 'HexSIM_Analysis'
@@ -65,7 +65,7 @@ class HexSimAnalysis(QWidget):
         
         self.magnification = Settings('M', dtype=float, initial=63, unit = 'X',  
                                       layout=slayout, write_function = self.setReconstructor)
-        self.NA = Settings('NA', dtype=float, initial=1.00, layout=slayout, 
+        self.NA = Settings('NA', dtype=float, initial=1.1, layout=slayout, 
                                        write_function = self.setReconstructor)
         self.n = Settings(name ='n', dtype=float, initial=1.33,  spinbox_decimals=2,
                                       layout=slayout, write_function = self.setReconstructor)
@@ -78,15 +78,15 @@ class HexSimAnalysis(QWidget):
         self.dz = Settings('dz', dtype=float, initial=0.55, layout=slayout,
                                   spinbox_decimals=2, unit = 'um',
                                   write_function = self.rescaleZ)
-        self.alpha = Settings('alpha', dtype=float, initial=0.350,  spinbox_decimals=2, 
+        self.alpha = Settings('alpha', dtype=float, initial=0.5,  spinbox_decimals=2, 
                               layout=slayout, write_function = self.setReconstructor)
         self.beta = Settings('beta', dtype=float, initial=0.980, spinbox_step=0.01, 
                              layout=slayout,  spinbox_decimals=3,
                              write_function = self.setReconstructor)
-        self.w = Settings('w', dtype=float, initial=2.00, layout=slayout,
+        self.w = Settings('w', dtype=float, initial=0.5, layout=slayout,
                               spinbox_decimals=2,
                               write_function = self.setReconstructor)
-        self.eta = Settings('eta', dtype=float, initial=0.34,
+        self.eta = Settings('eta', dtype=float, initial=0.35,
                             layout=slayout, spinbox_decimals=3, spinbox_step=0.01,
                             write_function = self.setReconstructor)
         self.use_phases = Settings('use_phases', dtype=bool, initial=True, layout=slayout,                         
@@ -101,7 +101,7 @@ class HexSimAnalysis(QWidget):
                                       layout=slayout, write_function = self.setReconstructor)
         self.axial = Settings('axial', dtype=bool, initial=False, layout=slayout, 
                           write_function = self.setReconstructor) 
-        self.group = Settings('group', dtype=int, initial=10, vmin=2,
+        self.group = Settings('group', dtype=int, initial=30, vmin=2,
                             layout=slayout,
                             write_function = self.setReconstructor)
         self.frame_index = Settings('frame', dtype = int, initial=0, vmin = 0,
@@ -134,8 +134,8 @@ class HexSimAnalysis(QWidget):
                                      write_function = self.setReconstructor)
         self.debug = Settings('debug', dtype=bool, initial=False, layout=blayout,
                           write_function = self.setReconstructor) 
-        # self.gpu = Settings('gpu', dtype=bool, initial=False, layout=blayout, 
-        #                   write_function = self.setReconstructor) 
+        self.gpu = Settings('gpu', dtype=bool, initial=False, layout=blayout, 
+                           write_function = self.setReconstructor) 
         self.compact = Settings('compact', dtype=bool, initial=False, layout=blayout, 
                           write_function = self.setReconstructor) 
         
@@ -143,7 +143,7 @@ class HexSimAnalysis(QWidget):
                         'Widefield': self.calculate_WF_image,
                         'Calibrate': self.calibration,
                         'Plot calibration phases':self.find_phaseshifts,
-                        'SIM reconstruction': self.standard_reconstruction,
+                        'SIM reconstruction': self.single_plane_reconstruction,
                         'Stack SIM reconstruction': self.stack_reconstruction,
                         'Stack demodulation': self.stack_demodulation,
                         }
@@ -155,7 +155,7 @@ class HexSimAnalysis(QWidget):
     
     
     def open_h5_dataset(self, path: pathlib.Path = MYPATH,
-                        dataset:int = 50 ):
+                        dataset:int = 0 ):
         # open file
         from get_h5_data import get_multiple_h5_datasets, get_h5_attr, get_datasets_index_by_name, get_group_name
         import os
@@ -226,7 +226,7 @@ class HexSimAnalysis(QWidget):
             if self.keep_calibrating.val:
                 self.calibration()
             if self.keep_reconstructing.val:
-                self.standard_reconstruction()
+                self.single_plane_reconstruction()
         except Exception as e:
                      print(e)
     
@@ -335,7 +335,7 @@ class HexSimAnalysis(QWidget):
         if self.keep_calibrating.val:
             self.calibration()
         if self.keep_reconstructing.val:
-            self.standard_reconstruction()
+            self.single_plane_reconstruction()
                  
         
     def calculate_spectrum(self):
@@ -446,7 +446,7 @@ class HexSimAnalysis(QWidget):
         sz,sy,sx = imageWFdata.shape
         self.viewer.dims.current_step = (sz//2,sy//2,sx//2) #centered in the 3 projections
 
-    
+    @add_timer
     def calibration(self):  
         if hasattr(self, 'h'):
             data = self.get_imageRaw()
@@ -461,7 +461,11 @@ class HexSimAnalysis(QWidget):
 
             selected_imRaw = np.swapaxes(data, 0, 1).reshape((sp * new_delta, sy, sx))
             
-            self.h.calibrate(selected_imRaw,self.find_carrier.val)          
+            if self.gpu.val:
+                self.h.calibrate_pytorch(selected_imRaw,self.find_carrier.val)
+            else:
+                self.h.calibrate(selected_imRaw,self.find_carrier.val)        
+                
             self.isCalibrated = True
             #self.check_checkboxes()
             if self.find_carrier.val: # store the value found   
@@ -470,20 +474,23 @@ class HexSimAnalysis(QWidget):
                 self.p_input = self.h.p
                 self.ampl_input = self.h.ampl      
              
-    
-    def standard_reconstruction(self):  
+    @add_timer
+    def single_plane_reconstruction(self):  
         current_imageRaw = self.get_current_image()
         if self.isCalibrated:
             print('recon executed')   
-            
-            imageSIM = self.h.reconstruct_rfftw(current_imageRaw)
+            if self.gpu.val:
+                imageSIM = self.h.reconstruct_pytorch(current_imageRaw)
+            else:
+                imageSIM = self.h.reconstruct_rfftw(current_imageRaw)
             
             imname = 'SIM_' + self.imageRaw_name
             self.show_image(imageSIM, fullname=imname, scale=[0.5,0.5], hold =True)
                 
         else:
             raise(Warning('SIM processor not calibrated'))  
-            
+    
+    
     def stack_reconstruction(self):
         
         def update_sim_image(stack):
@@ -495,7 +502,9 @@ class HexSimAnalysis(QWidget):
             self.viewer.dims.current_step = (sz//2,sy//2,sx//2) #centered in the 3 projections
             print('Stack reconstruction completed')
         
+        
         @thread_worker(connect={'returned': update_sim_image})
+        @add_timer_to_function
         def _stack_reconstruction():
             import warnings
             warnings.filterwarnings('ignore')
@@ -506,28 +515,36 @@ class HexSimAnalysis(QWidget):
                 phases_stack = hyperstack[:,zidx,:,:]
                 if self.keep_calibrating.val:
                     delta = self.group.val // 2
-                    remainer = self.group.val % 2
-                    zmin = max(zidx-delta,0)
-                    zmax = min(zidx+delta+remainer,sz)
-                    new_delta = zmax-zmin
-                    data = hyperstack[:,zmin:zmax,:,:]
-                    selected_imRaw = np.swapaxes(data, 0, 1).reshape((sp * new_delta, sy, sx))
-                    self.h.calibrate(selected_imRaw,self.find_carrier.val)   
- 
-                stackSIM[zidx,:,:] = self.h.reconstruct_rfftw(phases_stack)
+                    if zidx % delta == 0: # TODO check if calibration every delta is fine
+                        remainer = self.group.val % 2
+                        zmin = max(zidx-delta,0)
+                        zmax = min(zidx+delta+remainer,sz)
+                        new_delta = zmax-zmin
+                        data = hyperstack[:,zmin:zmax,:,:]
+                        selected_imRaw = np.swapaxes(data, 0, 1).reshape((sp * new_delta, sy, sx))
+                        if self.gpu.val:
+                            self.h.calibrate_pytorch(selected_imRaw,self.find_carrier.val)
+                        else:
+                            self.h.calibrate(selected_imRaw,self.find_carrier.val)      
+                
+                if self.gpu.val:
+                    stackSIM[zidx,:,:] = self.h.reconstruct_rfftw(phases_stack)
+                else:
+                    stackSIM[zidx,:,:] = self.h.reconstruct_pytorch(phases_stack)
             return stackSIM
         
         @thread_worker(connect={'returned': update_sim_image})
+        @add_timer_to_function
         def _batch_reconstruction():
             import warnings
             warnings.filterwarnings('ignore')
             hyperstack = self.get_imageRaw()
             sp,sz,sy,sx = hyperstack.shape
             hyperstack = np.swapaxes(hyperstack, 0, 1).reshape((sp * sz, sy, sx))
-            if self.compact.val:
+            if self.gpu.val:
+                stackSIM = self.h.batchreconstructcompact_pytorch(hyperstack)
+            else:
                 stackSIM = self.h.batchreconstructcompact(hyperstack)
-            elif not self.compact.val:
-                stackSIM = self.h.batchreconstruct(hyperstack)
             return stackSIM
         
         # main function exetuted here
@@ -653,7 +670,7 @@ class HexSimAnalysis(QWidget):
             else:
                 layer.visible = False    
         
-    def register_stack(self,image:Image, mode='Euclidean'):
+    def register_stack(self,image:Image, mode='Euclidean', plot_extent = 0.1):
     
         def add_image(data):
             self.viewer.add_image(data, 
@@ -668,10 +685,52 @@ class HexSimAnalysis(QWidget):
             warnings.filterwarnings('ignore')
             frame_idx = self.frame_index.val
             stack = image.data
-            registered = stack_registration(stack, z_idx=frame_idx, c_idx=0, method = 'cv2', mode=mode)
+            registered, wms = stack_registration(stack, z_idx=frame_idx, c_idx=0, method = 'cv2', mode=mode)
+            
+            nz = len(wms)
+            dxs = np.zeros(nz)
+            dys = np.zeros(nz)
+            for widx,warp_matrix in enumerate(wms):
+                dxs[widx] = warp_matrix[0,2]
+                dys[widx] = warp_matrix[1,2]
+            self.plot_data(dxs,'frame z','displacement')
+            self.plot_data(dys,'frame z','displacement')
+            zrange= np.arange(int(nz/2-nz*plot_extent),int(nz/2+nz*plot_extent), dtype=int)
+            error = np.sum(np.sqrt((dxs[zrange]**2)+(dys[zrange]**2)))/np.size(zrange)
+            print (f'average displacement: {error} pixels, frames: {np.amin(zrange)}-{np.amax(zrange)}')
+            #print (f'rms displacement: {np.sqrt((np.sum(dys**2)+np.sum(dys**2))/nz)} pixels')
+            
             return registered
             
         _register_stack() 
+    
+    def plot_data(self, data, xlabel='', ylabel='',  plot_type='lin'):
+        import matplotlib.pyplot as plt
+        data = np.array(data)
+        char_size = 10
+        linewidth = 0.85
+        plt.rc('font', family='calibri', size=char_size)
+        fig = plt.figure(figsize=(4,3), dpi=150)
+        ax = fig.add_subplot(111)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        # ax.set_title(title, size=char_size)   
+        ax.set_xlabel(xlabel, size=char_size)
+        ax.set_ylabel(ylabel, size=char_size)
+        if plot_type == 'log':
+            # data=data+np.mean(data) # in case of log plot, the mean is added to avoid zeros
+            ax.set_yscale('log')
+        ax.plot(data, linewidth=linewidth)    
+        ax.xaxis.set_tick_params(labelsize=char_size*0.75)
+        ax.yaxis.set_tick_params(labelsize=char_size*0.75)
+        # ax.legend(legend, loc='best', frameon = False, fontsize=char_size*0.8)
+        ax.grid(True, which='major',axis='both',alpha=0.2)
+        fig.tight_layout()
+        plt.show()
+        plt.rcParams.update(plt.rcParamsDefault)
+    
+    
+    
     
     def segment(self,
                 image_layer:Image,

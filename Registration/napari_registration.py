@@ -176,7 +176,7 @@ def register_rois(image: Image,
                                                                       bbox_zoom) 
     roi_num = len(real_initial_positions)
     stack = np.asarray(image.data)
-    time_frames_num, sy, sx = stack.shape
+    time_frames_num, ss, sy, sx = stack.shape
         
     def add_rois(params):
             import numpy.matlib
@@ -400,8 +400,11 @@ def process_rois(image: Image,
             plot_data(intensities, colors, "time index", "mean intensity")
             #plot_data(spectra, colors, "frequency index", "power spectrum", plot_type = 'log')
         
+        directory, filename = os.path.split(path)
+        newpath = directory+'\\'+image.name+'.xlsx'
+        
         if save_results:
-            save_in_excel(filename_xls = path,
+            save_in_excel(filename_xls = newpath,
                           sheet_name = 'Roi',
                           x = yx[...,1], 
                           y = yx[...,0],

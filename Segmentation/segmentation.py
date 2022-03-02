@@ -16,6 +16,7 @@ from skimage.morphology import erosion, dilation, closing, opening, cube, ball, 
 from qtpy.QtWidgets import QLabel, QVBoxLayout,QSplitter, QHBoxLayout, QWidget, QPushButton, QSpinBox, QFormLayout
 from napari.qt.threading import thread_worker
 
+
 class Segmentation3D():
     
     def __init__(self, viewer:napari.Viewer):

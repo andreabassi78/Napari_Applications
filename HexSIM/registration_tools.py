@@ -100,7 +100,9 @@ def stack_registration(stack, z_idx, c_idx = 0, method = 'cv2', mode = 'Euclidea
         sz = s[1] 
         
         registered = np.zeros_like(stack)
+        wm_list = [np.eye(2, 3, dtype=np.float32)]*sz
         registered[c_idx,z_idx,:,:] = stack[c_idx,z_idx,:,:] 
+        
         #otherchannels = [ci for ci in range(sc) if ci !=c_idx ] 
         #print(otherchannels)
         
@@ -111,7 +113,8 @@ def stack_registration(stack, z_idx, c_idx = 0, method = 'cv2', mode = 'Euclidea
             _, wm  = image_registration(ref_image, current_image)
             for ci in range(sc):
                 otherimage = stack[ci,zi,:,:]
-                registered[ci,zi,:,:] = apply_warp(otherimage, wm)      
+                registered[ci,zi,:,:] = apply_warp(otherimage, wm)
+            wm_list[zi] = wm
         #register backwards
         for zi in range(z_idx-1,-1,-1):
             ref_image = registered[c_idx,zi+1,:,:]
@@ -120,33 +123,35 @@ def stack_registration(stack, z_idx, c_idx = 0, method = 'cv2', mode = 'Euclidea
             for ci in range(sc):
                 otherimage = stack[ci,zi,:,:]
                 registered[ci,zi,:,:] = apply_warp(otherimage, wm)
-        return registered    
+            wm_list[zi] = wm
+            
+        return registered, wm_list    
          
     
     elif stack.ndim ==3:
         sz = s[0]
         registered = np.zeros_like(stack)
+        wm_list = [np.eye(2, 3, dtype=np.float32)]*sz
         registered[z_idx,:,:] = stack[z_idx,:,:]
+        
         #register forwards
         for zi in range(z_idx+1,sz):
             ref_image = registered[zi-1,:,:]
             current_image = stack[zi,:,:]
-            registered[zi,:,:],_ = image_registration(ref_image, current_image)  
+            registered[zi,:,:],wm = image_registration(ref_image, current_image)
+            wm_list[zi] = wm
         #register backwards
         for zi in range(z_idx-1,-1,-1):
             ref_image = registered[zi+1,:,:]
             current_image = stack[zi,:,:]
-            registered[zi,:,:],_ = image_registration(ref_image, current_image)  
-        return registered
+            registered[zi,:,:],wm = image_registration(ref_image, current_image)
+            wm_list[zi] = wm
+        
+        return registered, wm_list
 
     else:
         raise(TypeError( 'only 3D (z,y,x) or 4D (c,z,y,x) registration is supported'))
-       
-   
-
-
-
-        
+             
     
 if __name__ == '__main__':
     

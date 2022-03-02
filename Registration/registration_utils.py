@@ -371,7 +371,7 @@ def plot_data(data, colors, xlabel, ylabel,  plot_type='lin'):
         ax.set_yscale('log')
     for cidx, color in enumerate(colors):
         ax.plot(data[:,cidx], linewidth=linewidth, color = color)
-    ax.plot(data[:,cidx], linewidth=linewidth, color = color)    
+        #ax.plot(data[:,cidx], linewidth=linewidth, color = color)    
     ax.xaxis.set_tick_params(labelsize=char_size*0.75)
     ax.yaxis.set_tick_params(labelsize=char_size*0.75)
     ax.legend(legend, loc='best', frameon = False, fontsize=char_size*0.8)
