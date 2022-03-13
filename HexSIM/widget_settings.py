@@ -87,7 +87,7 @@ class Settings():
         else: raise(TypeError, 'Specified setting type not supported')
         
         self.set_func(val)
-        if self.write_function :
+        if self.write_function is not None:
             change_func.connect(self.write_function)
         settingLayout = QFormLayout()
         settingLayout.addRow(sbox, QLabel(name))

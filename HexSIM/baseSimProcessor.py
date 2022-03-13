@@ -319,7 +319,7 @@ class BaseSimProcessor:
         mask = (krbig < 2)
         mtot = mtot | mask
         wienerfilter[mask] = (wienerfilter[mask] + self._tf(krbig[mask]) ** 2 * self._att(krbig[mask]))
-        self.wienerfilter = wienerfilter
+        self.wienerfilter = wienerfilter #TODO extract
 
         if useTorch:  # interp not available in pytorch
             theta = torch.atan2(torch.as_tensor(kybig, device=self.tdev, dtype=torch.float32),
@@ -897,25 +897,24 @@ class BaseSimProcessor:
         band1_common = fft.ifft2(fft.fft2(np.conjugate(band1)) / otf * otf_mask_for_band_common_freq)
 
         band = band0_common * band1_common
-        ixf = np.abs(fft.fftshift(fft.fft2(fft.fftshift(band)))) # TODO move this
         if self.debug:
-               
+            ixf = np.abs(fft.fftshift(fft.fft2(fft.fftshift(band))))   
             plt.figure()
             plt.title('Find carrier')
             plt.imshow(ixf, cmap = plt.get_cmap('gray'))
             ax = plt.gca()
             circle = plt.Circle((pxc0, pyc0), color = 'red', fill = False)
-            ax.add_artist(circle)
-        self.ixf = ixf # TODO add this    
+            ax.add_artist(circle)  
         mag = 25 * self.N / 256
+        #self.zoom = 1/mag # TODO add this
         ixfz, Kx, Ky = self._zoomf(band, self.N, np.single(self._k[pxc0]), np.single(self._k[pyc0]), mag , self._dk * self.N)
         pyc, pxc = self._findPeak(abs(ixfz))
-
+        #self.ixf_refined = abs(ixfz) # TODO add this  
         if self.debug:
             plt.figure()
             plt.title('Zoom Find carrier')
             plt.imshow(abs(ixfz))
-
+            
         kx = Kx[pxc]
         ky = Ky[pyc]
 
@@ -1032,7 +1031,7 @@ class BaseSimProcessor:
             plt.figure()
             plt.title('Find carrier')
             plt.imshow(ixf.cpu().numpy(), cmap=plt.get_cmap('gray'))
-
+        self.ixf = ixf.cpu().numpy() # TODO add this     
         # pyc0, pxc0 = self._findPeak_cupy((ixf - gaussian_filter_cupy(ixf, 20)) * mask)
         pyc0, pxc0 = self._findPeak_pytorch(ixf * mask)
         kx = (self._dk * (pxc0 - self.N / 2)).cpu().numpy()
@@ -1089,8 +1088,10 @@ class BaseSimProcessor:
             ax.add_artist(circle)
 
         mag = 25 * self.N / 256
+        self.zoom = 1/mag # TODO add this
         ixfz, Kx, Ky = self._zoomf_pytorch(band, self.N, np.single(self._k[pxc0]), np.single(self._k[pyc0]), mag, self._dk * self.N)
         pyc, pxc = self._findPeak_pytorch(abs(ixfz))
+        self.ixf_refined = abs(abs(ixfz.cpu().numpy())) # TODO add this  
 
         if self.debug:
             plt.figure()
