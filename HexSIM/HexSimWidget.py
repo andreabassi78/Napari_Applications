@@ -61,14 +61,13 @@ class HexSimAnalysis(QWidget):
              
         
     def create_Settings(self, slayout): 
-        self.sim_method = Settings('SIM acquisition mode', dtype=int, initial=2, layout=slayout, 
-                              write_function = self.reset_processor)
+        
         self.phases_number = Settings('phases', dtype=int, initial=7, layout=slayout, 
                               write_function = self.reset_processor)
         self.angles_number = Settings('angles', dtype=int, initial=1, layout=slayout, 
                               write_function = self.reset_processor)
         
-        self.magnification = Settings('M', dtype=float, initial=100, unit = 'X',  
+        self.magnification = Settings('M', dtype=float, initial=60, unit = 'X',  
                                       layout=slayout, write_function = self.setReconstructor)
         self.NA = Settings('NA', dtype=float, initial=1.05, layout=slayout, 
                                        write_function = self.setReconstructor)
@@ -91,7 +90,7 @@ class HexSimAnalysis(QWidget):
         self.w = Settings('w', dtype=float, initial=0.5, layout=slayout,
                               spinbox_decimals=2,
                               write_function = self.setReconstructor)
-        self.eta = Settings('eta', dtype=float, initial=0.75,
+        self.eta = Settings('eta', dtype=float, initial=0.65,
                             layout=slayout, spinbox_decimals=3, spinbox_step=0.01,
                             write_function = self.setReconstructor)
         self.use_phases = Settings('use_phases', dtype=bool, initial=True, layout=slayout,                         
@@ -116,6 +115,10 @@ class HexSimAnalysis(QWidget):
                                      layout=blayout,
                                      write_function = self.show_spectrum
                                      )
+        self.showEta = Settings('Show Eta circle', dtype=bool, initial=False,
+                                     layout=blayout,
+                                     write_function = self.show_eta
+                                     )
         self.showCarrier = Settings('Show Carrier', dtype=bool, initial=False,
                                      layout=blayout,
                                      write_function = self.show_carrier
@@ -133,7 +136,7 @@ class HexSimAnalysis(QWidget):
         self.gpu = Settings('gpu', dtype=bool, initial=False, layout=blayout, 
                            write_function = self.setReconstructor) 
         
-        buttons_dict = {'Reset': self.reset_processor,
+        buttons_dict = {#'Reset': self.reset_processor,
                         'Widefield': self.calculate_WF_image,
                         'Calibrate': self.calibration,
                         'Plot calibration phases':self.find_phaseshifts,
@@ -184,13 +187,13 @@ class HexSimAnalysis(QWidget):
             
         
     def select_layer(self, image: Image):
-        
+        self.imageRaw = image
         if image.data.ndim == 5:
             self.imageRaw_name = image.name
             sa,sp,sz,sy,sx = image.data.shape
             self.angles_number.val = sa
             self.phases_number.val = sp
-            self.viewer.dims.axis_labels = ["angle", "phase", "z", "y","x"]
+            #self.viewer.dims.axis_labels = ["angle", "phase", "z", "y","x"]
         elif image.data.ndim == 4:
             self.imageRaw_name = image.name
             sp,sz,sy,sx = image.data.shape
@@ -202,13 +205,12 @@ class HexSimAnalysis(QWidget):
             
         assert sy == sx, 'Non-square images are not supported'
         self.rescaleZ()
-        self.center_image(image)
+        #self.center_image(image)
         self.start_sim_processor()
         print(f'Selected image layer: {image.name}')
            
             
     def rescaleZ(self):
-        
         self.zscaling = self.dz.val /(self.pixelsize.val/self.magnification.val)
         for layer in self.viewer.layers:
             if isinstance(layer, Image):
@@ -224,8 +226,8 @@ class HexSimAnalysis(QWidget):
         self.viewer.dims.current_step = current_step
         
            
-    def on_step_change(self, val = 0):   
-        if self.viewer.dims.ndim >3:
+    def on_step_change(self, *args):   
+        if hasattr(self, 'imageRaw_name'): #self.viewer.dims.ndim >3:
             self.setReconstructor()
             if self.showSpectrum.val:
                  self.show_spectrum()
@@ -236,12 +238,10 @@ class HexSimAnalysis(QWidget):
             scale = kwargs['scale']
         else:
             scale = [1.]*image_values.ndim
-        
         if 'hold' in kwargs.keys() and fullname in self.viewer.layers:
             
             self.viewer.layers[fullname].data = image_values
             self.viewer.layers[fullname].scale = scale
-        
         else:  
             layer = self.viewer.add_image(image_values,
                                             name = fullname,
@@ -250,17 +250,37 @@ class HexSimAnalysis(QWidget):
             return layer
     
     
-    def get_imageRaw(self):
+    def get_hyperstack(self):
         try:
             return self.viewer.layers[self.imageRaw_name].data
         except:
-             raise(KeyError('Please select a valid 4D image (phase,z,y,x)'))
+             raise(KeyError('Please select a valid 4D(phase,z,y,x) or 5D(angle,...) stack'))
+    
+    
+    def get_current_stack(self):
+        z_index = int(self.viewer.dims.current_step[-3])
+        fullstack = self.get_hyperstack()
+        s = fullstack.shape
+        assert z_index < s[-3], 'Please select a valid step for the selected stack'
+        
+        stack = fullstack[...,z_index,:,:]
+        return stack
     
     
     def get_current_image(self):
         z_index = int(self.viewer.dims.current_step[-3])
-        data = self.get_imageRaw()
-        return data[...,z_index,:,:]
+        phase_index = int(self.viewer.dims.current_step[-4])
+        hs = self.get_hyperstack()
+        ndims = hs.ndim
+        if ndims == 5:
+             angle_index = int(self.viewer.dims.current_step[-5])   
+             img0 = hs[angle_index,phase_index,z_index,:,:]
+        elif ndims == 4:
+            img0 = hs[phase_index,z_index,:,:]
+        else:
+            raise(KeyError('Please select a valid 4D image (phase,z,y,x)'))
+        return(img0)
+    
     
     
     def start_sim_processor(self):     
@@ -270,8 +290,8 @@ class HexSimAnalysis(QWidget):
             self.stop_sim_processor()
             self.start_sim_processor()
         else:
-            if self.sim_method.val == 0: # insert combo box
-                self.h = SimProcessor()  # create reconstruction object
+            if self.phases_number.val == 3 and self.angles_number.val == 1: 
+                self.h = SimProcessor()  
                 self.h.opencv = False
                 self.h.debug = False
                 self.setReconstructor() 
@@ -280,8 +300,8 @@ class HexSimAnalysis(QWidget):
                 self.p_input = np.zeros((1, 1), dtype=np.single)
                 self.ampl_input = np.zeros((1, 1), dtype=np.single)
             
-            elif self.sim_method.val == 1: 
-                self.h = HexSimProcessor()  # create reconstruction object
+            elif self.phases_number.val == 7:  
+                self.h = HexSimProcessor()  
                 self.h.opencv = False
                 self.h.debug = False
                 self.setReconstructor() 
@@ -290,7 +310,7 @@ class HexSimAnalysis(QWidget):
                 self.p_input = np.zeros((3, 1), dtype=np.single)
                 self.ampl_input = np.zeros((3, 1), dtype=np.single)
             
-            elif self.sim_method.val == 2:
+            elif self.phases_number.val == 3 and self.angles_number.val == 3: 
                 self.h = ConvSimProcessor()
                 self.h.opencv = False
                 self.h.debug = False
@@ -301,7 +321,7 @@ class HexSimAnalysis(QWidget):
                 self.ampl_input = np.zeros((3, 1), dtype=np.single)
                 
             else: 
-                raise(ValueError("Invalid SIM method"))
+                raise(ValueError("Invalid phases or angles number"))
 
             
     def stop_sim_processor(self):
@@ -335,45 +355,36 @@ class HexSimAnalysis(QWidget):
                 self.calibration()
             if self.keep_reconstructing.val:
                 self.single_plane_reconstruction()
+            if self.showEta.val:
+                self.show_eta()
           
             
-    def show_wiener(self):
+    def show_wiener(self, *args):
         """
         Shows the wiener filter
         """
-        
         if self.isCalibrated:
             imname = 'Wiener_' + self.imageRaw_name
             img = self.h.wienerfilter
             swy,swx = img.shape
             self.show_image(img[swy//2-swy//4:swy//2+swy//4,swx//2-swx//4:swx//2+swx//4],
                             imname, hold = True, scale=[1,1])
+            
         
-        
-    def show_spectrum(self):
+    def show_spectrum(self, *args):
         """
         Calculates power spectrum of the image
         """
         if self.showSpectrum.val and hasattr(self, 'imageRaw_name') and self.viewer.dims.ndim >3:
             imname = 'Spectrum_' + self.imageRaw_name
-            phase_index = int(self.viewer.dims.current_step[-4])
-            img = self.get_current_image()
-            ndims = img.ndim
-            if ndims == 4:
-                 angle_index = int(self.viewer.dims.current_step[-5])   
-                 img0 = self.get_current_image()[angle_index,phase_index,:,:]
-            elif ndims == 3:
-                img0 = self.get_current_image()[phase_index,:,:]
-                
-            else:
-                return                    
+            img0 = self.get_current_image()
             epsilon = 1e-10
             ps = np.log((np.abs(fftshift(fft2(img0))))**2+epsilon)
             
             self.show_image(ps, imname, hold = True)
             
             
-    def show_xcorr(self):
+    def show_xcorr(self, *args):
         """
         Show the crosscorrelation of the low and high pass filtered version of the raw images,
         used forfinding the carrier
@@ -383,7 +394,7 @@ class HexSimAnalysis(QWidget):
             #ixf_refined = self.h.ixf_refined
             imname = 'Xcorr_' + self.imageRaw_name
             #refined_imname = 'Xcorr_refined_' + self.imageRaw_name
-            self.show_image(ixf, imname, hold = True)
+            self.show_image(ixf, imname, hold = True, colormap ='gray_r')
             #zoom = self.h.zoom 
             #self.show_image(ixf_refined, refined_imname, hold = True, scale = (zoom,zoom))
             
@@ -391,41 +402,99 @@ class HexSimAnalysis(QWidget):
     def calculate_kr(self,N):       
         dx = self.h.pixelsize / self.h.magnification  # Sampling in image plane
         res = self.h.wavelength / (2 * self.h.NA)
+        cutoff = 1/res/2 # coherent cutoff frequency
         oversampling = res / dx
         dk = oversampling / (N / 2)  # Sampling in frequency plane
-        k = np.arange(-dk * N / 2, dk * N / 2, dk, dtype=np.double)
-        kr = np.sqrt(k ** 2 + k[:,np.newaxis] ** 2, dtype=np.single)
-        return  kr, dk    
+        kmax= dk * N / 2
+        #k = np.arange(-dk * N / 2, dk * N / 2, dk, dtype=np.double)
+        #kr = np.sqrt(k ** 2 + k[:,np.newaxis] ** 2, dtype=np.single)
+        return kmax, dk, cutoff   
       
-        
-    def show_carrier(self): 
-        if self.showCarrier.val and self.isCalibrated:
+    #@add_timer    
+    def show_carrier(self, *args):
+        if self.showCarrier.val: 
+            N = self.h.N
+            kmax, dk, cutoff  = self.calculate_kr(N)
+            if self.isCalibrated:
                 kxs = self.h.kx
                 kys = self.h.ky
-                N = self.h.N
-                _kr, dk = self.calculate_kr(N)
-                
                 pc = np.zeros((len(kxs),2))
                 for idx, (kx,ky) in enumerate(zip(kxs,kys)):
                     pc[idx,0] = ky[0] / dk + N/2
                     pc[idx,1] = kx[0] / dk + N/2
-
-                self.add_point( pc, color = 'red')
+                # shows carrier frequencies
+                name = f'carrier_{self.imageRaw_name}'
+                radius = self.h.N // 30 # radius of the displayed circle 
+                self.add_circles(pc, name, radius, color='red', hold=False)
+                self.show_eta()
+                kr = np.sqrt(kxs**2+kys**2)
+                print('Carrier magnitude / cut off:', *kr/cutoff)
                 
+           
+    def show_eta(self, *args):
+        if self.showEta.val:    
+            # shows circle with radius eta
+            N = self.h.N
+            kmax, dk, cutoff  = self.calculate_kr(N)
+            name = f'eta_circle{self.imageRaw_name}'
+            eta_radius = self.h.eta * cutoff/dk
+            self.add_circles(np.array([N/2,N/2]), 
+                           name, eta_radius, color='green', hold=False)
     
-    def add_point(self, locations, name = '', color = 'green'):
-        radius = self.h.N // 30 # radius of the displayed circle 
-        fullname = f'Carrier_{self.imageRaw_name}_{name}'
+    
+    def showCalibrationTable(self):
+        import pandas as pd
+        headers= ['kx_in','ky_in','kx','ky','phase','amplitude']
+        vals = [self.kx_input, self.ky_input,
+                self.h.kx, self.h.ky,
+                self.h.p,self.h.ampl]
+
+        table = pd.DataFrame([vals] , columns = headers )
+        print(table)
+
+
+    def add_circles(self, locations, shape_name='shapename', 
+                    radius=20, color='blue', hold = False 
+                    ):
+        ellipses = []
+        
+        for center in locations: 
+            bbox = np.array([center+np.array([radius, radius]),
+                             center+np.array([radius,-radius]),
+                             center+np.array([-radius,-radius]),
+                             center+np.array([-radius, radius])]
+                            )
+            ellipses.append(bbox)
+        
+        if shape_name in self.viewer.layers and hold==False:
+            self.viewer.layers.remove(shape_name)
+            
         try:
-            self.viewer.layers[fullname].data = locations
+            self.viewer.layers[shape_name].add_ellipses(ellipses, edge_color=color)
+        
+        except KeyError:
+            self.viewer.add_shapes(name=shape_name,
+                                   edge_width = 1,
+                                   face_color = [1,1,1,0],
+                                   edge_color = color)
+            self.viewer.layers[shape_name].add_ellipses(ellipses, edge_color=color)
+            
+        
+        
+    def add_point(self, locations, name='image_name', radius=20, color='green'):
+        
+        try:
+            self.viewer.layers[name].data = locations
+            self.viewer.layers[name].size = np.array([radius,radius])
+            
         except:
             self.viewer.add_points(locations, size= radius,
-                              face_color= [1,1,1,0], name = fullname , 
-                              edge_width=0.5, edge_color=color) 
+                              face_color= [1,1,1,0], name = name, 
+                              edge_width=0.5, edge_color=color)
+    
             
-     
     def stack_demodulation(self): 
-        hyperstack = self.get_imageRaw()
+        hyperstack = self.get_hyperstack()
         if hyperstack.ndim == 5:
             angle_index = int(self.viewer.dims.current_step[-5]) 
             hyperstack = np.squeeze(hyperstack[angle_index,...]) 
@@ -444,7 +513,7 @@ class HexSimAnalysis(QWidget):
         
     
     def calculate_WF_image(self):
-        imageWFdata = np.squeeze(np.mean(self.get_imageRaw(), axis=-4))
+        imageWFdata = np.squeeze(np.mean(self.get_hyperstack(), axis=-4))
         imname = 'WF_' + self.imageRaw_name
         scale = self.viewer.layers[self.imageRaw_name].scale 
         
@@ -455,7 +524,7 @@ class HexSimAnalysis(QWidget):
     @add_timer
     def calibration(self):  
         if hasattr(self, 'h'):
-            data = self.get_imageRaw()
+            data = self.get_hyperstack()
             dshape = data.shape
             zidx = int(self.viewer.dims.current_step[-3])
             delta = self.group.val // 2
@@ -475,19 +544,19 @@ class HexSimAnalysis(QWidget):
                 self.h.calibrate(selected_imRaw,self.find_carrier.val)        
                 
             self.isCalibrated = True
-            #self.check_checkboxes()
             if self.find_carrier.val: # store the value found   
                 self.kx_input = self.h.kx  
                 self.ky_input = self.h.ky
                 self.p_input = self.h.p
                 self.ampl_input = self.h.ampl 
-            self.show_carrier()
             self.show_xcorr()
+            self.show_carrier()
+            
              
             
     @add_timer
     def single_plane_reconstruction(self):  
-        current_image = self.get_current_image()
+        current_image = self.get_current_stack()
         dshape= current_image.shape
         phases_angles = self.phases_number.val*self.angles_number.val
         rdata = current_image.reshape(phases_angles, dshape[-2],dshape[-1])
@@ -558,7 +627,7 @@ class HexSimAnalysis(QWidget):
         if not self.isCalibrated:
             raise(Warning('SIM processor not calibrated'))
         else:
-            fullstack = self.get_imageRaw()
+            fullstack = self.get_hyperstack()
             dshape = fullstack.shape
             sz = dshape[-3]
             sy = dshape[-2]
@@ -597,50 +666,61 @@ class HexSimAnalysis(QWidget):
           
     def find_phaseshifts(self):
         if self.isCalibrated:
-            if self.phases_number.val == 7:
-                self.find_7phaseshifts()
-            if self.phases_number.val == 3:
-                self.find_3phaseshifts()
-            self.showCalibrationTable() 
+            if self.phases_number.val==7:
+                self.find_hexsim_phaseshifts()
+            elif self.phases_number.val==3 :
+                self.find_sim_phaseshifts()
+            #self.showCalibrationTable() 
         else:
             raise(Warning('SIM processor not calibrated, unable to show phases'))
             
         
-    def find_7phaseshifts(self):    
+    def find_hexsim_phaseshifts(self):   
         phaseshift = np.zeros((7,3))
         expected_phase = np.zeros((7,3))
         error = np.zeros((7,3))
         
         for i in range (3):
-            phase, _ = self.h.find_phase(self.h.kx[i],self.h.ky[i],self.get_current_image())
+            phase, _ = self.h.find_phase(self.h.kx[i], self.h.ky[i], self.get_current_stack())
             expected_phase[:,i] = np.arange(7) * 2*(i+1) * np.pi / 7
             phaseshift[:,i] = np.unwrap(phase - phase[0])
         error = phaseshift-expected_phase
         
-        data_to_plot = [expected_phase,phaseshift, error]
+        data_to_plot = [expected_phase, phaseshift, error]
         symbols = ['.','o','|']
         legend = ['expected', 'measured', 'error']
         self.plot_with_plt(data_to_plot, legend, symbols,
                                 xlabel = 'step', ylabel = 'phase (rad)', vmax = 6*np.pi)
             
-    def find_3phaseshifts(self):
-        phase, _ = self.h.find_phase(self.h.kx,self.h.ky,self.get_current_image())
-        expected_phase = np.arange(0, 2*np.pi ,2*np.pi / 3) 
-        #phaseshift= np.unwrap(phase - expected_phase) - phase[0]
-        phaseshift = np.unwrap(phase- phase[0])
-        error = phaseshift-expected_phase
-        data_to_plot = [expected_phase, phaseshift, error]
-        symbols = ['.','o','|']
-        legend = ['expected', 'measured', 'error']
-        self.plot_with_plt(data_to_plot, legend, symbols,
-                           xlabel = 'step', ylabel = 'phase (rad)', vmax = 2*np.pi)
-        print(f"\nExpected phases: {expected_phase}\
-                         \nMeasured phases: {phaseshift}\
-                         \nError          : {error}\n")
-                         
+    
+    def find_sim_phaseshifts(self):   
+        stack = self.get_current_stack()
+        if stack.ndim == 3:
+            sa = 1 # single angle sim
+            sp,sy,sx = stack.shape
+        elif stack.ndim == 4:
+            sa,sp,sy,sx = stack.shape
+        img = stack.reshape(sa*sp, sy, sx)  
+        for angle_idx in range (sa):
+            phaseshift = np.zeros((sp,sa))
+            expected_phase = np.zeros((sp,sa))
+            error = np.zeros((sp,sa))
+            phase, _ = self.h.find_phase(self.h.kx[angle_idx], self.h.ky[angle_idx], img)
+            phase = np.unwrap(phase)
+            phase = phase.reshape(sa,sp).T
+            expected_phase[:,angle_idx] = np.arange(sp) * 2*np.pi / sp
+            phaseshift= phase-phase[0,:]
+            error = phaseshift-expected_phase      
+            data_to_plot = [expected_phase, phaseshift, error]
+            symbols = ['.','o','|']
+            legend = ['expected', 'measured', 'error']
+            self.plot_with_plt(data_to_plot, legend, symbols, title = f'angle {angle_idx}',
+                                    xlabel = 'step', ylabel = 'phase (rad)', vmax = 2*np.pi)
+                             
     
     def plot_with_plt(self, data_list, legend, symbols,
-                      xlabel = 'step', ylabel = 'phase', vmax = 2*np.pi):
+                      xlabel = 'step', ylabel = 'phase',
+                      vmax = 2*np.pi, title = ''):
         import matplotlib.pyplot as plt
         char_size = 10
         plt.rc('font', family='calibri', size=char_size)
@@ -650,6 +730,7 @@ class HexSimAnalysis(QWidget):
         ax.spines['right'].set_visible(False)
         ax.set_xlabel(xlabel, size=char_size)
         ax.set_ylabel(ylabel, size=char_size)
+        ax.set_title(title, size=char_size)   
         
         s = data_list[0].shape
         cols = 1 if len(s)==1 else s[1]
@@ -673,17 +754,7 @@ class HexSimAnalysis(QWidget):
         fig.tight_layout()
         plt.show()
         plt.rcParams.update(plt.rcParamsDefault)
-        
     
-    def showCalibrationTable(self):
-        import pandas as pd
-        headers= ['kx_in','ky_in','kx','ky','phase','amplitude']
-        vals = [self.kx_input, self.ky_input,
-                self.h.kx, self.h.ky,
-                self.h.p,self.h.ampl]
-
-        table = pd.DataFrame([vals] , columns = headers )
-        print(table)
     
     def make_layers_visible(self, *layers_list):
         
@@ -731,10 +802,11 @@ class HexSimAnalysis(QWidget):
 
        
 if __name__ == '__main__':
-    file = 'test.tif'
+    
     viewer = napari.Viewer()
     
     widget = HexSimAnalysis(viewer)
+    
     mode={"choices": ['Translation','Affine','Euclidean','Homography']}
     registration = magicgui(widget.register_stack, call_button='Register stack', mode=mode)
     selection = magicgui(widget.select_layer, auto_call=True )# call_button='Select image layer')

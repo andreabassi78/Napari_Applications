@@ -771,6 +771,7 @@ class BaseSimProcessor:
         assert (img.shape[0] >= self._nsteps), f'number of images in find_phase should be >= {self._nsteps}'
         nimages = (img.shape[0] // self._nsteps) * self._nsteps
         (kx, ky) = (kx.squeeze(), ky.squeeze())
+        
         if useTorch:
             img = torch.as_tensor(img, dtype=torch.float32, device=self.tdev)
             kr = torch.as_tensor(self._kr, device=self.tdev)
