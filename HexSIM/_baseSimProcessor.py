@@ -72,6 +72,10 @@ class BaseSimProcessor:
 
     def _allocate_arrays(self):
         """ define matrix """
+        print('in allocate arrays')
+        print('opencv? ' ,opencv)
+        print('torch? ' , pytorch)
+        
         self.kx = np.zeros((self._nbands, 1), dtype=np.single)
         self.ky = np.zeros((self._nbands, 1), dtype=np.single)
         self.p = np.zeros((self._nbands, 1), dtype=np.single)
@@ -118,6 +122,11 @@ class BaseSimProcessor:
         self._calibrate(img, findCarrier, useTorch=True)
 
     def _calibrate(self, img, findCarrier=True, useTorch=False, useCupy=False):
+        
+        print('in calibrate')
+        print('opencv? ' ,opencv)
+        print('torch? ' , pytorch)
+        
         assert len(img) > self._nsteps - 1
         self.N = len(img[0, :, :])
         if self.N != self._lastN:
@@ -452,6 +461,11 @@ class BaseSimProcessor:
         return self._bigimgstore_cp.get()
 
     def reconstruct_pytorch(self, img):
+        
+        print('in reconstruct pytorch')
+        print('opencv? ' ,opencv)
+        print('torch? ' , pytorch)
+        
         assert torch, "No PyTorch present"
         self._imgstore = img.copy()
         imf = torch.fft.rfft2(torch.as_tensor(img, device=self.tdev)) * torch.as_tensor(self._prefilter[:, 0:self.N // 2 + 1], device=self.tdev)
@@ -477,6 +491,11 @@ class BaseSimProcessor:
         return self._bigimgstore
 
     def reconstructframe_rfftw(self, img, i):
+        print('in reconstruct rfftw')
+        print('opencv? ' ,opencv)
+        print('torch? ' , pytorch)
+        
+        
         diff = img.astype(np.single) - self._imgstore[i, :, :].astype(np.single)
         imf = fft.rfft2(diff) * self._prefilter[:, 0:self.N // 2 + 1]
         self._carray1[0, 0:self.N // 2, 0:self.N // 2 + 1] = imf[0:self.N // 2, 0:self.N // 2 + 1]
@@ -765,6 +784,10 @@ class BaseSimProcessor:
             print(f'\tcupy memory total after clearing: {cp._default_memory_pool.total_bytes() / 1e9} GB')
 
     def find_phase(self, kx, ky, img, useCupy=False, useTorch=False):
+        print('in find phase')
+        print('opencv? ' ,opencv)
+        print('torch? ' , pytorch)
+        
         # Finds the complex correlation coefficients of the spatial frequency component at (kx, ky)
         # in the images in img.  Run after calibration with a full set to find kx and estimated band0 component
         # Combines the given images modulo the self._nsteps, and returns self._nsteps amplitude and phase values

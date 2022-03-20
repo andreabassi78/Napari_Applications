@@ -95,23 +95,8 @@ class Settings():
         self.sbox = sbox
 
 
-def add_timer(method):
-    """Function decorator to mesaure the execution time of a method.
-    To avoid conflicts with QtObjects, it assumes that the method takes no arguments except self 
-    """ 
-    def inner(cls):
-        print(f'\nStarting method "{method.__name__}" ...') 
-        start_time = time.time() 
-        result = method(cls) 
-        end_time = time.time() 
-        print(f'Execution time for method "{method.__name__}": {end_time-start_time:.6f} s') 
-        return result
-    inner.__name__ = method.__name__
-    return inner 
-
-def add_timer_to_function(function):
-    """Function decorator to mesaure the execution time of a method.
-    To avoid conflicts with QtObjects, it assumes that the method takes no arguments except self 
+def add_timer(function):
+    """Function decorator to mesaure the execution time of a function or a method.
     """ 
     def inner(*args):
         print(f'\nStarting method "{function.__name__}" ...') 
