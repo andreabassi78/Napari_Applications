@@ -604,8 +604,8 @@ class HexSimAnalysis(QWidget):
         '''
         Demodulates the data as proposed in Neil et al, Optics Letters 1997.
         '''
-        if not self.isCalibrated:
-            raise(Warning('SIM processor not calibrated'))
+        assert self.isCalibrated, 'SIM processor not calibrated'    
+        
         fullstack = self.get_hyperstack()
         sa,sp,sz,sy,sx = fullstack.shape
         phases_angles = sa*sp
@@ -619,7 +619,7 @@ class HexSimAnalysis(QWidget):
             demodulated[frame_index,:,:] = np.squeeze(demodulation_function(stack))
         imname = 'Demodulated_' + self.imageRaw_name
         scale = [self.zscaling,1,1]
-        self.show_image(demodulated, imname, scale= scale, hold = True)
+        self.show_image(demodulated, imname, scale=scale, hold=True, autoscale=True)
         #print('Stack demodulation completed')
         
     
@@ -675,19 +675,17 @@ class HexSimAnalysis(QWidget):
         '''
         Performs SIM reconstruction on the selected z plane.
         '''
+        assert self.isCalibrated, 'SIM processor not calibrated, unable to perform SIM reconstruction'
         current_image = self.get_current_stack()
         dshape= current_image.shape
         phases_angles = self.phases_number.val*self.angles_number.val
         rdata = current_image.reshape(phases_angles, dshape[-2],dshape[-1])
-        if self.isCalibrated:
-            if self.use_torch.val:
-                imageSIM = self.h.reconstruct_pytorch(rdata.astype(np.float32)) #TODO:this is left after conversion from torch
-            else:
-                imageSIM = self.h.reconstruct_rfftw(rdata)
-            imname = 'SIM_' + self.imageRaw_name
-            self.show_image(imageSIM, fullname=imname, scale=[0.5,0.5], hold =True, autoscale = True)
+        if self.use_torch.val:
+            imageSIM = self.h.reconstruct_pytorch(rdata.astype(np.float32)) #TODO:this is left after conversion from torch
         else:
-            raise(Warning('SIM processor not calibrated'))  
+            imageSIM = self.h.reconstruct_rfftw(rdata)
+        imname = 'SIM_' + self.imageRaw_name
+        self.show_image(imageSIM, fullname=imname, scale=[0.5,0.5], hold =True, autoscale = True)
     
     
     def stack_reconstruction(self):
@@ -742,8 +740,7 @@ class HexSimAnalysis(QWidget):
             return stackSIM
         
         # main function exetuted here
-        if not self.isCalibrated:
-            raise(Warning('SIM processor not calibrated'))
+        assert self.isCalibrated, 'SIM processor not calibrated, unable to perform SIM reconstruction'
         fullstack = self.get_hyperstack()
         sa,sp,sz,sy,sx = fullstack.shape
         phases_angles = sa*sp
@@ -756,15 +753,13 @@ class HexSimAnalysis(QWidget):
                 
           
     def find_phaseshifts(self):
-        if self.isCalibrated:
-            if self.phases_number.val==7:
-                self.find_hexsim_phaseshifts()
-            elif self.phases_number.val==3 :
-                self.find_sim_phaseshifts()
-            #self.showCalibrationTable() 
-        else:
-            raise(Warning('SIM processor not calibrated, unable to show phases'))
-            
+        assert self.isCalibrated, 'SIM processor not calibrated, unable to show phases'
+        if self.phases_number.val==7:
+            self.find_hexsim_phaseshifts()
+        elif self.phases_number.val==3 :
+            self.find_sim_phaseshifts()
+        #self.showCalibrationTable() 
+    
         
     def find_hexsim_phaseshifts(self):   
         phaseshift = np.zeros((7,3))
