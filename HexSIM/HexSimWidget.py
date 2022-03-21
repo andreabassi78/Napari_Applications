@@ -397,7 +397,7 @@ class HexSimAnalysis(QWidget):
         self.start_sim_processor()
        
         
-    @add_timer    
+    #@add_timer    
     def setReconstructor(self,*args):
         '''
         Sets the attributes of the Processor
@@ -518,7 +518,7 @@ class HexSimAnalysis(QWidget):
                 self.remove_layer(self.viewer.layers[name])
                 
            
-    def show_eta(self, *args):
+    def show_eta(self):
         '''
         Shows two circles with radius eta (green circle), 
         and with the radius of the pupil (blue) 
@@ -535,7 +535,6 @@ class HexSimAnalysis(QWidget):
                                name, color='blue', hold=True)
             elif name in self.viewer.layers:
                 self.remove_layer(self.viewer.layers[name])
-
 
     def add_circles(self, locations, radius=20,
                     shape_name='shapename', color='blue', hold=False
@@ -583,6 +582,9 @@ class HexSimAnalysis(QWidget):
             
             
     def _stack_demodulation(self): 
+        '''
+        obsolete
+        '''
         hyperstack = self.get_hyperstack()
         angle_index = int(self.viewer.dims.current_step[0]) 
         hyperstack = np.squeeze(hyperstack[angle_index,...]) 
@@ -597,8 +599,8 @@ class HexSimAnalysis(QWidget):
         self.show_image(demodulated_abs, imname, scale= scale, hold = True)
         print('Stack demodulation completed')
         
-
-    def stack_demodulation(self):
+    @add_timer
+    def stack_demodulation(self, *args):
         '''
         Demodulates the data as proposed in Neil et al, Optics Letters 1997.
         '''
@@ -632,12 +634,13 @@ class HexSimAnalysis(QWidget):
         scale = self.viewer.layers[self.imageRaw_name].scale
         self.show_image(imageWFdata, imname, scale = scale[2:], hold = True, autoscale = True)
         
-
-    def calibration(self):
+    @add_timer
+    def calibration(self, *args):
         '''
         Performs the data calibration using the Processor (self.h).
         It is performed on a stack of images around the frame selected in the viewer.
         The size of the stack is the value specified in the "group" Setting.
+        *args is to avoid conflic with the add_timer decorator
         '''
         if hasattr(self, 'h'):
             data = self.get_hyperstack()
@@ -699,7 +702,7 @@ class HexSimAnalysis(QWidget):
             scale = [self.zscaling, 0.5, 0.5]
             self.show_image(stack, fullname=imname, scale=scale, hold = True, autoscale = True)
             
-            print('Stack reconstruction completed')
+            #print('Stack reconstruction completed')
         
         @thread_worker(connect={'returned': update_sim_image})
         @add_timer
@@ -871,7 +874,6 @@ class HexSimAnalysis(QWidget):
             error = np.sum(np.sqrt((dxs[zrange]**2)+(dys[zrange]**2)))/np.size(zrange)
             print (f'average displacement: {error} pixels, frames: {np.amin(zrange)}-{np.amax(zrange)}')
             #print (f'rms displacement: {np.sqrt((np.sum(dys**2)+np.sum(dys**2))/nz)} pixels')
-            
             return registered
             
         _register_stack() 
