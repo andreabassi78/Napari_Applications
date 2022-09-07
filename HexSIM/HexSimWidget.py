@@ -4,138 +4,151 @@ Created on Tue Jan 25 16:34:41 2022
 
 @author: Andrea Bassi @Polimi
 """
+from hexSimProcessor import HexSimProcessor
+from convSimProcessor import ConvSimProcessor
+from simProcessor import SimProcessor 
 import napari
-from qtpy.QtWidgets import QLabel, QVBoxLayout,QSplitter, QHBoxLayout, QWidget, QPushButton
+from qtpy.QtWidgets import QVBoxLayout,QSplitter, QHBoxLayout, QWidget, QPushButton
 from napari.layers import Image
 import numpy as np
 from numpy.fft import fft2, fftshift 
 from napari.qt.threading import thread_worker
-from hexSimProcessor import HexSimProcessor
-from convSimProcessor import ConvSimProcessor
-from simProcessor import SimProcessor 
-from magicgui import magicgui
-from widget_settings import Settings, add_timer
+from magicgui import magicgui, magic_factory
+from widget_settings import Setting
 import warnings
 import pathlib
 from  registration_tools import stack_registration
 
-#MYPATH ='C:\\Users\\andrea\\OneDrive - Politecnico di Milano\\Data\\PROCHIP\\DatasetTestNapari\\220114_113154_PROCHIP_SIM_ROI.h5'
-#MYPATH = 'C:\\Users\\andrea\\OneDrive - Politecnico di Milano\\Data\PROCHIP\\Spyder\\220228\\220228_192448_PROCHIP_HexSIM_ROI.h5'
-MYPATH ='C:\\Users\\andrea\\OneDrive - Politecnico di Milano\\Data\\PROCHIP\\DatasetTestNapari\\220218_145747_PROCHIP_SIM_ROI_dts_00_05_30_33.h5'
-class HexSimAnalysis(QWidget):
-    
-    name = 'HexSIM_Analysis'
 
-    def __init__(self, viewer:napari.Viewer,
-                 ):
-        self.viewer = viewer
-        super().__init__()
+@magicgui
+def reshape(viewer: napari.Viewer,
+            image_layer: Image,
+            angles:int=1, phases:int=1,
+            z:int=1, y:int=1, x:int=1):
+    data = image_layer.data
+    if angles*phases*z*y*x != data.size:
+        raise(ValueError('Image_layer cannot be reshaped to the given values'))
+    else:
+        rdata = data.reshape(angles, phases, z, y, x)
+        image_layer.data = rdata
+        viewer.dims.axis_labels = ["angle", "phase", "z", "y","x"]
         
-        self.setup_ui() # run setup_ui before instanciating the Settings
+
+class SimAnalysis(QWidget):
+    '''
+    Napari widget for reconstruction of Structured Illumination microscopy (SIM) data.
+    Accelerated with pytorch, if installed.
+    Currently supports:    
+        - conventional data with improved resolution in 1D (1 angle, 3 phases)
+        - conventional data (3 angles, 3 phases)
+        - hexagonal SIM (7 phases).
+    Accepts image stacks organized in one of th following ways:
+        3D (phase,y,x)
+        4D (phase,z,y,x)
+        5D(angle,phase,z,y,x)'
+    Support for N angles, N phases is in progress.
+    For 3D stacks with multiple (z) planes it processes each plane as in:
+        https://doi.org/10.1098/rsta.2020.0162
+    Support for 3D SIM with enhanced resolution in all direction not yet supported.     
+    '''
+
+    name = 'SIM_Analysis'
+    
+    def __init__(self, napari_viewer):
+        self.viewer = napari_viewer
+        super().__init__()
+        self.setup_ui() # run setup_ui before instanciating the settings
         self.start_sim_processor()
         self.viewer.dims.events.current_step.connect(self.on_step_change)
         
     def setup_ui(self):     
         
-        def add_section(_layout,_title):
+        def add_section(_layout):
             from qtpy.QtCore import Qt
             splitter = QSplitter(Qt.Vertical)
             _layout.addWidget(splitter)
-            _layout.addWidget(QLabel(_title))
+            #_layout.addWidget(QLabel(_title))
             
         # initialize layout
         layout = QHBoxLayout()
         self.setLayout(layout)
-        
-        # Settings
-        settings_layout = QVBoxLayout()
-        add_section(settings_layout,'Settings')
-        layout.addLayout(settings_layout)
-        self.create_Settings(settings_layout)
-        
-        # Buttons
-        operations_layout = QVBoxLayout()
-        add_section(operations_layout,'Operations')
-        layout.addLayout(operations_layout)
-        self.create_Operations(operations_layout)
-             
-        
-    def create_Settings(self, slayout): 
-        
-        self.phases_number = Settings('phases', dtype=int, initial=7, layout=slayout, 
+        left_layout = QVBoxLayout()
+        add_section(left_layout)
+        layout.addLayout(left_layout)
+        right_layout = QVBoxLayout()
+        add_section(right_layout)
+        layout.addLayout(right_layout)
+        # Fill left layout  
+        self.phases_number = Setting('phases', dtype=int, initial=7, layout=left_layout, 
                               write_function = self.reset_processor)
-        self.angles_number = Settings('angles', dtype=int, initial=1, layout=slayout, 
+        self.angles_number = Setting('angles', dtype=int, initial=1, layout=left_layout, 
                               write_function = self.reset_processor)
-        self.magnification = Settings('M', dtype=float, initial=60, unit = 'X',  
-                                      layout=slayout, write_function = self.setReconstructor)
-        self.NA = Settings('NA', dtype=float, initial=1.05, layout=slayout, 
+        self.magnification = Setting('M', dtype=float, initial=60,  
+                                      layout=left_layout, write_function = self.setReconstructor)
+        self.NA = Setting('NA', dtype=float, initial=1.05, layout=left_layout, 
                                        write_function = self.setReconstructor)
-        self.n = Settings(name ='n', dtype=float, initial=1.33,  spinbox_decimals=2,
-                                      layout=slayout, write_function = self.setReconstructor)
-        self.wavelength = Settings('\u03BB', dtype=float, initial=0.570,
-                                       layout=slayout,  spinbox_decimals=3,
+        self.n = Setting(name ='n', dtype=float, initial=1.33,  spinbox_decimals=2,
+                                      layout=left_layout, write_function = self.setReconstructor)
+        self.wavelength = Setting('\u03BB', dtype=float, initial=0.570,
+                                       layout=left_layout,  spinbox_decimals=2, unit = '\u03BCm',
                                        write_function = self.setReconstructor)
-        self.pixelsize = Settings('pixelsize', dtype=float, initial=6.50, layout=slayout,
-                                  spinbox_decimals=2, unit = 'um',
+        self.pixelsize = Setting('pixel size', dtype=float, initial=6.50, layout=left_layout,
+                                  spinbox_decimals=2, unit = '\u03BCm',
                                   write_function = self.setReconstructor)
-        self.dz = Settings('dz', dtype=float, initial=0.55, layout=slayout,
-                                  spinbox_decimals=2, unit = 'um',
+        self.dz = Setting('dz', dtype=float, initial=0.55, layout=left_layout,
+                                  spinbox_decimals=2, unit = '\u03BCm',
                                   write_function = self.rescaleZ)
-        self.alpha = Settings('alpha', dtype=float, initial=0.5,  spinbox_decimals=2, 
-                              layout=slayout, write_function = self.setReconstructor)
-        self.beta = Settings('beta', dtype=float, initial=0.980, spinbox_step=0.01, 
-                             layout=slayout,  spinbox_decimals=3,
+        self.alpha = Setting('alpha', dtype=float, initial=0.5,  spinbox_decimals=2, 
+                              layout=left_layout, write_function = self.setReconstructor)
+        self.beta = Setting('beta', dtype=float, initial=0.980, spinbox_step=0.01, 
+                             layout=left_layout,  spinbox_decimals=3,
                              write_function = self.setReconstructor)
-        self.w = Settings('w', dtype=float, initial=0.5, layout=slayout,
+        self.w = Setting('w', dtype=float, initial=0.5, layout=left_layout,
                               spinbox_decimals=2,
                               write_function = self.setReconstructor)
-        self.eta = Settings('eta', dtype=float, initial=0.65,
-                            layout=slayout, spinbox_decimals=3, spinbox_step=0.01,
+        self.eta = Setting('eta', dtype=float, initial=0.65,
+                            layout=left_layout, spinbox_decimals=3, spinbox_step=0.01,
                             write_function = self.setReconstructor)
-        self.use_phases = Settings('use_phases', dtype=bool, initial=True, layout=slayout,                         
+        self.group = Setting('group', dtype=int, initial=30, vmin=2,
+                            layout=left_layout,
+                            write_function = self.setReconstructor)
+        self.use_phases = Setting('use phases', dtype=bool, initial=True, layout=left_layout,                         
                                    write_function = self.setReconstructor)
-        self.find_carrier = Settings('Find Carrier', dtype=bool, initial=True,
-                                     layout=slayout, 
+        self.find_carrier = Setting('find carrier', dtype=bool, initial=True,
+                                     layout=left_layout, 
                                      write_function = self.setReconstructor) 
-        self.group = Settings('group', dtype=int, initial=30, vmin=2,
-                            layout=slayout,
-                            write_function = self.setReconstructor)
-
-
-    def create_Operations(self,blayout):    
-        
-        self.showXcorr = Settings('Show Xcorr', dtype=bool, initial=False,
-                                     layout=blayout,
+        # Fill right layout    
+        self.showXcorr = Setting('Show Xcorr', dtype=bool, initial=False,
+                                     layout=right_layout,
                                      write_function = self.show_xcorr
                                      )
-        self.showSpectrum = Settings('Show Spectrum', dtype=bool, initial=False,
-                                     layout=blayout,
+        self.showSpectrum = Setting('Show Spectrum', dtype=bool, initial=False,
+                                     layout=right_layout,
                                      write_function = self.show_spectrum
                                      )
-        self.showWiener = Settings('Show Wiener filter', dtype=bool, initial=False,
-                                     layout=blayout,
+        self.showWiener = Setting('Show Wiener filter', dtype=bool, initial=False,
+                                     layout=right_layout,
                                      write_function = self.show_wiener
                                      )
-        self.showEta = Settings('Show Eta circle', dtype=bool, initial=False,
-                                     layout=blayout,
+        self.showEta = Setting('Show Eta circle', dtype=bool, initial=False,
+                                     layout=right_layout,
                                      write_function = self.show_eta
                                      )
-        self.showCarrier = Settings('Show Carrier', dtype=bool, initial=False,
-                                     layout=blayout,
+        self.showCarrier = Setting('Show Carrier', dtype=bool, initial=False,
+                                     layout=right_layout,
                                      write_function = self.show_carrier
                                      )
-        self.keep_calibrating = Settings('Continuos Calibration', dtype=bool, initial=False,
-                                     layout=blayout, 
+        self.keep_calibrating = Setting('Continuos Calibration', dtype=bool, initial=False,
+                                     layout=right_layout, 
                                      write_function = self.setReconstructor)
-        self.keep_reconstructing = Settings('Continuos Reconstruction', dtype=bool, initial=False,
-                                     layout=blayout, 
+        self.keep_reconstructing = Setting('Continuos Reconstruction', dtype=bool, initial=False,
+                                     layout=right_layout, 
                                      write_function = self.setReconstructor)
-        self.batch = Settings('Batch Reconstruction', dtype=bool, initial=False,
-                                     layout=blayout, 
+        self.batch = Setting('Batch Reconstruction', dtype=bool, initial=False,
+                                     layout=right_layout, 
                                      write_function = self.setReconstructor)
-        self.use_torch = Settings('Use Torch', dtype=bool, initial=False, layout=blayout, 
-                           write_function = self.setReconstructor) 
-        
+        self.use_torch = Setting('Use Torch', dtype=bool, initial=False, layout=right_layout, 
+                           write_function = self.setReconstructor)         
         buttons_dict = {'Widefield': self.calculate_WF_image,
                         'Calibrate': self.calibration,
                         'Plot calibration phases':self.find_phaseshifts,
@@ -143,15 +156,14 @@ class HexSimAnalysis(QWidget):
                         'Stack SIM reconstruction': self.stack_reconstruction,
                         'Stack demodulation': self.stack_demodulation,
                         }
-
         for button_name, call_function in buttons_dict.items():
             button = QPushButton(button_name)
             button.clicked.connect(call_function)
-            blayout.addWidget(button) 
-    
-    
-    def open_h5_dataset(self, path: pathlib.Path = MYPATH,
-                        dataset:int = 33 ):
+            right_layout.addWidget(button) 
+            
+    def open_h5_dataset(self, path: pathlib.Path = '',
+                        dataset:int = 0, 
+                        cx = 1000, cy=600,size = 256):
         # open file
         from get_h5_data import get_multiple_h5_datasets, get_h5_attr, get_datasets_index_by_name, get_group_name
         import os
@@ -159,6 +171,42 @@ class HexSimAnalysis(QWidget):
         t_idx = f'/t{dataset:04d}/'
         index_list, names = get_datasets_index_by_name(path, t_idx)
         stack,found = get_multiple_h5_datasets(path, index_list)
+        
+        #stack = np.squeeze(stack)[:,np.newaxis,cy-size:cy+size,cx-size:cx+size]
+        sp,sz,sy,sx = stack.shape
+        
+        if sp != 3 and sp != 7:  
+            raise(ValueError(f'Unsupported number of phases. Unable to open dataset {dataset}.'))
+        else:
+            print(f'\nCorrectly opened dataset {dataset}/{(found//sp)-1} \
+                         \nwith {sp} phases and {sz} images')
+        
+        #updates settings
+        measurement_names,_ = get_group_name(path, 'measurement')
+        measurement_name = measurement_names[0]
+        for key in ['magnification','n','NA','pixelsize','wavelength']:
+            val = get_h5_attr(path, key, group = measurement_name) # Checks if the key is in the Scopefoundry measurement settings
+            if len(val)>0 and hasattr(self,key):
+                new_value = val[0]
+                setattr(getattr(self,key), 'val', new_value)
+                print(f'Updated {key} to: {new_value} ')
+        #sp,sz,sy,sx = stack.shape
+        assert sy == sx, 'Non-square images are not supported'
+        fullname = f'dts{dataset}_{filename}'
+        self.show_image(stack, im_name=fullname)
+        self.rescaleZ()
+        self.viewer.dims.axis_labels = ('phase','z','y','x')
+    
+    def _open_h5_dataset(self, path: pathlib.Path = '',
+                        dataset:int = 0 ):
+        # open file
+        from get_h5_data import get_multiple_h5_datasets, get_h5_attr, get_datasets_index_by_name, get_group_name
+        import os
+        directory, filename = os.path.split(path)
+        t_idx = f'/t{dataset:04d}/'
+        index_list, names = get_datasets_index_by_name(path, t_idx)
+        stack,found = get_multiple_h5_datasets(path, index_list)
+        
         sp,sz,sy,sx = stack.shape
         if sp != 3 and sp != 7:  
             raise(ValueError(f'Unsupported number of phases. Unable to open dataset {dataset}.'))
@@ -175,10 +223,10 @@ class HexSimAnalysis(QWidget):
                 new_value = val[0]
                 setattr(getattr(self,key), 'val', new_value)
                 print(f'Updated {key} to: {new_value} ')
-        sp,sz,sy,sx = stack.shape
+        #sp,sz,sy,sx = stack.shape
         assert sy == sx, 'Non-square images are not supported'
         fullname = f'dts{dataset}_{filename}'
-        self.show_image(stack, fullname=fullname)
+        self.show_image(stack, im_name=fullname)
         self.rescaleZ()
         self.viewer.dims.axis_labels = ('phase','z','y','x')
             
@@ -247,18 +295,19 @@ class HexSimAnalysis(QWidget):
             for dim_idx in [-3,-2,-1]:
                 current_step[dim_idx] = data.shape[dim_idx]//2
             self.viewer.dims.current_step = current_step                
-    
            
+            
     def on_step_change(self, *args):   
         if hasattr(self, 'imageRaw_name'): #self.viewer.dims.ndim >3:
             self.setReconstructor()
             if self.showSpectrum.val:
                  self.show_spectrum()
             
-            
-    def show_image(self, image_values, fullname, **kwargs):
+                 
+    def show_image(self, image_values, im_name, **kwargs):
         '''
-        creates a new Image layer or updates an existing one if 'hold' in kwargs is True 
+        creates a new Image layer with image_values as data
+        or updates an existing layer, if 'hold' in kwargs is True 
         '''
         if 'scale' in kwargs.keys():    
             scale = kwargs['scale']
@@ -268,13 +317,13 @@ class HexSimAnalysis(QWidget):
             colormap = kwargs['colormap']
         else:
             colormap = 'gray'    
-        if kwargs.get('hold') is True and fullname in self.viewer.layers:
-            layer = self.viewer.layers[fullname]
+        if kwargs.get('hold') is True and im_name in self.viewer.layers:
+            layer = self.viewer.layers[im_name]
             layer.data = image_values
             layer.scale = scale
         else:  
             layer = self.viewer.add_image(image_values,
-                                            name = fullname,
+                                            name = im_name,
                                             scale = scale,
                                             colormap = colormap,
                                             interpolation = 'bilinear')
@@ -300,7 +349,7 @@ class HexSimAnalysis(QWidget):
                 self.viewer.layers.move(idx, len(self.viewer.layers))
                 layer.visible = True
                 if isinstance(layer, Image):
-                    viewer.layers.selection = [layer]
+                    self.viewer.layers.selection = [layer]
     
     
     def make_layers_visible(self, *layers_list):
@@ -397,11 +446,11 @@ class HexSimAnalysis(QWidget):
         self.start_sim_processor()
        
         
-    #@add_timer    
+    #     
     def setReconstructor(self,*args):
         '''
         Sets the attributes of the Processor
-        Executed frequently, upon update of several Settings
+        Executed frequently, upon update of several settings
         '''
         if hasattr(self, 'h'):   
             self.h.usePhases = self.use_phases.val
@@ -445,7 +494,7 @@ class HexSimAnalysis(QWidget):
             
     def show_spectrum(self, *args):
         """
-        Calculates power spectrum of the image
+        Calculates and shows the power spectrum of the image
         """
         if self.is_image_in_layers():
             imname = 'Spectrum_' + self.imageRaw_name
@@ -496,10 +545,9 @@ class HexSimAnalysis(QWidget):
       
     def show_carrier(self, *args):
         '''
-        Draw carrier frenquencies in a shape layer
+        Draws the carrier frenquencies in a shape layer
         '''
         if self.is_image_in_layers() and self.isCalibrated:
-            # shows carrier frequencies
             name = f'carrier_{self.imageRaw_name}'
             if self.showCarrier.val:
                 N = self.h.N
@@ -539,13 +587,23 @@ class HexSimAnalysis(QWidget):
     def add_circles(self, locations, radius=20,
                     shape_name='shapename', color='blue', hold=False
                     ):
+        
         '''
-        locations : np.array with yx cohordinates of the center 
-        shape_name : str, name of the new Shape
-        radius : radius of the circles
-        color : str of RGBA list, color of the circles
-        hold : bool, if Trueu pdates the existing layer, with name shape_name,
-            without creating a new one
+        Creates a circle in a layer with yx coordinates speciefied in each row of locations
+        
+        Parameters
+        ----------
+        locations : np.array
+            yx coordinates of the centers. 
+        shape_name : str
+            name of the new Shape
+        radius : int 
+            radius of the circles.
+        color : str of RGBA list
+            color of the circles.
+        hold : bool
+            if True updates the existing layer, with name shape_name,
+            without creating a new layer
         '''
         ellipses = []
         for center in locations: 
@@ -564,7 +622,7 @@ class HexSimAnalysis(QWidget):
                 circles_layer.data = np.array(ellipses)
         else:  
             circles_layer = self.viewer.add_shapes(name=shape_name,
-                                   edge_width = 0.8,
+                                   edge_width = 1.3,
                                    face_color = [1,1,1,0],
                                    edge_color = color)
             circles_layer.add_ellipses(ellipses, edge_color=color)
@@ -580,26 +638,7 @@ class HexSimAnalysis(QWidget):
         table = pd.DataFrame([vals] , columns = headers )
         print(table)
             
-            
-    def _stack_demodulation(self): 
-        '''
-        obsolete
-        '''
-        hyperstack = self.get_hyperstack()
-        angle_index = int(self.viewer.dims.current_step[0]) 
-        hyperstack = np.squeeze(hyperstack[angle_index,...]) 
-        p,z,y,x = hyperstack.shape
-        demodulated = np.zeros([z,y,x]).astype('complex64')
-        for frame_index in range(z): 
-            for p_idx in range(p):
-                demodulated[frame_index,:,:] += 2/p * hyperstack[p_idx,frame_index,:,:]*np.exp(1j*2*np.pi*p_idx/p)
-        demodulated_abs = np.abs(demodulated).astype('float') 
-        imname = 'Demodulated_' + self.imageRaw_name
-        scale = [self.zscaling,1,1]
-        self.show_image(demodulated_abs, imname, scale= scale, hold = True)
-        print('Stack demodulation completed')
         
-    @add_timer
     def stack_demodulation(self, *args):
         '''
         Demodulates the data as proposed in Neil et al, Optics Letters 1997.
@@ -634,7 +673,7 @@ class HexSimAnalysis(QWidget):
         scale = self.viewer.layers[self.imageRaw_name].scale
         self.show_image(imageWFdata, imname, scale = scale[2:], hold = True, autoscale = True)
         
-    @add_timer
+    
     def calibration(self, *args):
         '''
         Performs the data calibration using the Processor (self.h).
@@ -685,7 +724,7 @@ class HexSimAnalysis(QWidget):
         else:
             imageSIM = self.h.reconstruct_rfftw(rdata)
         imname = 'SIM_' + self.imageRaw_name
-        self.show_image(imageSIM, fullname=imname, scale=[0.5,0.5], hold =True, autoscale = True)
+        self.show_image(imageSIM, im_name=imname, scale=[0.5,0.5], hold =True, autoscale = True)
     
     
     def stack_reconstruction(self):
@@ -698,12 +737,11 @@ class HexSimAnalysis(QWidget):
         def update_sim_image(stack):
             imname = 'SIMstack_' + self.imageRaw_name
             scale = [self.zscaling, 0.5, 0.5]
-            self.show_image(stack, fullname=imname, scale=scale, hold = True, autoscale = True)
+            self.show_image(stack, im_name=imname, scale=scale, hold = True, autoscale = True)
             
             #print('Stack reconstruction completed')
         
         @thread_worker(connect={'returned': update_sim_image})
-        @add_timer
         def _stack_reconstruction():
             warnings.filterwarnings('ignore')
             stackSIM = np.zeros([sz,2*sy,2*sx], dtype=np.single)
@@ -730,7 +768,6 @@ class HexSimAnalysis(QWidget):
             return stackSIM
         
         @thread_worker(connect={'returned': update_sim_image})
-        @add_timer
         def _batch_reconstruction():
             warnings.filterwarnings('ignore')
             if self.use_torch.val:
@@ -835,10 +872,10 @@ class HexSimAnalysis(QWidget):
         fig.tight_layout()
         plt.show()
         plt.rcParams.update(plt.rcParamsDefault)
-    
 
         
-    def register_stack(self,image:Image, mode='Euclidean', plot_extent = 0.1):
+    def register_stack(self,image:Image,
+                       mode='Euclidean', plot_extent = 0.1):
     
         def add_image(data):
             self.viewer.add_image(data, 
@@ -861,14 +898,9 @@ class HexSimAnalysis(QWidget):
             for widx,warp_matrix in enumerate(wms):
                 dxs[widx] = warp_matrix[0,2]
                 dys[widx] = warp_matrix[1,2]
-            # self.plot_with_plt(dxs[:,np.newaxis], legend = [''], symbols=['o'],
-            #                    xlabel ='frame z', ylabel ='displacement')
-            # self.plot_with_plt(dys[:,np.newaxis], legend = [''], symbols=['o'],
-            #                    xlabel ='frame z', ylabel ='displacement')
             zrange= np.arange(int(nz/2-nz*plot_extent),int(nz/2+nz*plot_extent), dtype=int)
             error = np.sum(np.sqrt((dxs[zrange]**2)+(dys[zrange]**2)))/np.size(zrange)
             print (f'average displacement: {error} pixels, frames: {np.amin(zrange)}-{np.amax(zrange)}')
-            #print (f'rms displacement: {np.sqrt((np.sum(dys**2)+np.sum(dys**2))/nz)} pixels')
             return registered
             
         _register_stack() 
@@ -896,18 +928,57 @@ class HexSimAnalysis(QWidget):
         worker = _estimate_resolution()
         worker.start()
 
+
+@magicgui(call_button = "Calculate Power Spectrum")
+def calculate_spectrum(viewer: "napari.Viewer", image: Image,
+                        log_scale: bool = True)->Image:
+    stack = image.data
+    #current_step = viewer.dims.current_step
+    epsilon = 1e-6
+    
+    dims = stack.ndim
+    if dims <2:
+        print('no >2D data cannot calculate spectrum')
+    
+    if dims ==2:
+        im= stack
+    elif dims ==3:
+        im = np.squeeze(stack[0,:,:])
+    elif dims ==4:
+        im = np.squeeze(stack[0,0,:,:])
+    elif dims ==5:
+        im = np.squeeze(stack[0,0,0,:,:])
+
+    
+    if log_scale:
+        im_shown = np.log((np.abs(fftshift(fft2(im))))**2+epsilon)
+        
+    else:
+        im_shown = np.abs(fftshift(fft2(im)))**2
+    im_name = 'Spectrum_' + image.name
+    return Image(im_shown, name = im_name)
+
   
 if __name__ == '__main__':
     
+    import napari
+    #MYPATH ='C:\\Users\\andrea\\OneDrive - Politecnico di Milano\\Data\\PROCHIP\\DatasetTestNapari\\220114_113154_PROCHIP_SIM_ROI.h5'
+    #MYPATH = 'C:\\Users\\andrea\\OneDrive - Politecnico di Milano\\Data\PROCHIP\\Spyder\\220228\\220228_192448_PROCHIP_HexSIM_ROI.h5'
+    #MYPATH ='C:\\Users\\andrea\\OneDrive - Politecnico di Milano\\Data\\PROCHIP\\DatasetTestNapari\\220218_145747_PROCHIP_SIM_ROI_dts_00_05_30_33.h5'
+    MYPATH = 'C:\\Users\\andrea\\OneDrive - Politecnico di Milano\\Data\\PROCHIP\\HexSIM\\Frankenstein\\210726_163415_inv_bello_FLIR_NI_measurement.h5'
+
+    
     viewer = napari.Viewer()
     
-    widget = HexSimAnalysis(viewer)
+    widget = SimAnalysis(viewer)
     
     mode={"choices": ['Translation','Affine','Euclidean','Homography']}
     registration = magicgui(widget.register_stack, call_button='Register stack', mode=mode)
     selection = magicgui(widget.select_layer, call_button='Select image layer')
     h5_opener = magicgui(widget.open_h5_dataset, call_button='Open h5 dataset')
     resolution = magicgui(widget.estimate_resolution, call_button='Estimate resolution')
+    
+    #viewer.window.add_dock_widget(reshape)
     
     viewer.window.add_dock_widget(h5_opener,
                                   name = 'H5 file selection',
@@ -917,16 +988,19 @@ if __name__ == '__main__':
                                   name = 'Image layer selection',
                                   add_vertical_stretch = True)
     
-    viewer.window.add_dock_widget(widget,
-                                  name = 'HexSim analyzer @Polimi',
-                                  add_vertical_stretch = True)
+    # viewer.window.add_dock_widget(widget,
+    #                               name = 'HexSim analyzer @Polimi',
+    #                               add_vertical_stretch = True)
     
     viewer.window.add_dock_widget(registration,
                                   name = 'Stack registration',
                                   add_vertical_stretch = True)
+    # viewer.window.add_dock_widget(calculate_spectrum,
+    #                               name = 'Calculate spectrum',
+    #                               add_vertical_stretch = True)
     
-    viewer.window.add_dock_widget(resolution,
-                                  name = 'Resolution estimation',
-                                  add_vertical_stretch = True)
+    # viewer.window.add_dock_widget(resolution,
+    #                               name = 'Resolution estimation',
+    #                               add_vertical_stretch = True)
     
     napari.run()      

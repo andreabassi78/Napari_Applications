@@ -204,7 +204,8 @@ class PSF_simulator():
     def add_Ndimensional_SIM_pupil(self,     
                      kr = 0.5,
                      waist = 0.01,
-                     source_num = 3
+                     source_num = 3,
+                     add_cw = False
                      ):
         ''' Generates the pupil for mutlidimensional SIM microscopy
             (typically 2,3 or 4 sources are used)
@@ -214,13 +215,20 @@ class PSF_simulator():
                 relative to the  cutoff frequency self.k_cut_off
             
             '''
-        NumSources = 3    
-        source_theta = 2*np.pi/source_num * np.arange(source_num)
-        source_kr = [kr] * NumSources # list with NumSources elements
+
+        source_theta = list(2*np.pi/source_num * np.arange(source_num))
+        source_kr = [kr] * source_num # list with NumSources elements
+        source_amp = [1] * source_num # list with NumSources elements
+        
+        if add_cw:
+            source_kr.append(0.)
+            source_theta.append(0.)
+            source_amp.append(sum(source_amp))
+        
         self.amplitude *= multiple_gaussians(self.kx/self.k_cut_off,
                                   self.ky/self.k_cut_off,
                                   waist, waist,
-                                  source_kr, source_theta)
+                                  source_kr, source_amp, source_theta)
         
         
     
@@ -535,10 +543,10 @@ if __name__ == '__main__':
     mm = 1000 * um
     deg = np.pi/180
     
-    NA = 0.5
+    NA = 0.8
     
-    wavelength = 0.500 * um 
-    n0 = 1.00 # refractive index of the medium
+    wavelength = 0.532 * um 
+    n0 = 1. # refractive index of the medium
     
     n1 = 1.47 # refractive index of the slab
     thickness = 50 * um # slab thickness
@@ -546,21 +554,22 @@ if __name__ == '__main__':
     
     SaveData = False
     
-    Nxy = 127
+    Nxy = 128
     
-    Nz = 63
+    Nz = 64
      
-    dr = 0.1 * um
+    dr = 0.05 * um
     
-    dz = 0.2 * um
+    dz = 0.1 * um
     
     gen = PSF_simulator(NA, n0, wavelength, Nxy, Nz, 
                         dr = dr, dz = dz
                         )
     
-    # gen.add_Ndimensional_SIM_pupil(kr = 0.5,
-    #                                 waist = 0.018,
-    #                                 source_num = 3)
+    gen.add_Ndimensional_SIM_pupil(kr = 0.5,
+                                    waist = 0.02,
+                                    source_num = 2,
+                                    add_cw = True)
     
     # gen.add_lattice_pupil()
     # gen.add_lightsheet_pupil()
@@ -568,7 +577,7 @@ if __name__ == '__main__':
     # gen.add_slab_scalar(n1, thickness, alpha)
     
     # gen.add_slab_vectorial(n1, thickness, alpha)
-    gen.add_Zernike_aberration(3, 1, weight=1)
+    # gen.add_Zernike_aberration(3, 1, weight=1)
     # gen.add_conical_pupil(0.06*mm)
     
     # gen.add_cylindrical_lens(f_cyl=-40, f=20)
@@ -584,7 +593,7 @@ if __name__ == '__main__':
     gen.print_values()
     
     gen.show_pupil()
-    gen.plot_phase()
+    #gen.plot_phase()
     gen.show_PSF_projections(aspect_ratio=1, mode='plane')
     gen.plot_psf_profile()
        

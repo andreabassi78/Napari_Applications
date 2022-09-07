@@ -1,20 +1,29 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Jan 17 23:09:58 2022
+Created on Tue Jan 25 16:34:41 2022
 
-@author: andrea
+@author: Andrea Bassi @Polimi
 """
 import napari
+from qtpy.QtWidgets import QLabel, QVBoxLayout,QSplitter, QHBoxLayout, QWidget, QPushButton
+from napari.layers import Image,Shapes,Labels
 import numpy as np
-from magicgui import magicgui
-from napari.layers import Image,Labels, Shapes
+from numpy.fft import fft2, fftshift 
+from napari.qt.threading import thread_worker
 from scipy import ndimage as ndi
 from skimage.filters import threshold_otsu, threshold_li, threshold_yen, threshold_local, threshold_mean
+from skimage.morphology import erosion, dilation, closing, opening, cube, ball, remove_small_objects, remove_small_holes
 from skimage.segmentation import clear_border
 from skimage.measure import label
-from skimage.morphology import erosion, dilation, closing, opening, cube, ball, remove_small_objects, remove_small_holes
-from qtpy.QtWidgets import QLabel, QVBoxLayout,QSplitter, QHBoxLayout, QWidget, QPushButton, QSpinBox, QFormLayout
-from napari.qt.threading import thread_worker
+from hexSimProcessor import HexSimProcessor
+from convSimProcessor import ConvSimProcessor
+from simProcessor import SimProcessor 
+from magicgui import magicgui
+import warnings
+import pathlib
+from HexSIM.registration_tools import stack_registration
+from HexSIM.HexSimWidget import HexSimAnalysis
+from HexSIM.widget_settings import Settings, add_timer
 
 
 class Segmentation3D():
@@ -194,36 +203,43 @@ class Segmentation3D():
         _segment()
         
         
-                
-    
-if __name__ == '__main__':
-   
-    viewer = napari.Viewer()
-    myclass = Segmentation3D(viewer)
-  
-    show_props_widget = magicgui(myclass.show_props, call_button='Print region properties')
-    segment_widget = magicgui(myclass.segment,
-                              call_button='Run segmentation',
-                              method={"choices": ['otsu', 'yen', 'li', 'local', 'mean']},)
-    segment_widget.thresold.max = 2**16
-    rescale_widget = magicgui(myclass.rescale, call_button='Set scale')
-    
-    viewer.window.add_dock_widget(segment_widget,
-                                  name = '3D segmentation @Polimi',
-                                  add_vertical_stretch = True)
-    viewer.window.add_dock_widget(rescale_widget,
-                                  name='Rescale',
-                                  add_vertical_stretch = True)
-    viewer.window.add_dock_widget(show_props_widget,
-                                   name = 'Region prop',
-                                   add_vertical_stretch = True)
-    
-    try:
-        #path = "C:\\Users\\andrea\\OneDrive - Politecnico di Milano\\Data\\STED_Humanitas\\sample_data\\C0421_Pre-Post_STED_18621_OK.lif - C0421_GphN_vGAT_CTRL_N1.tif"
-        path = 'C:\\Users\\andrea\\OneDrive - Politecnico di Milano\\Data\\PROCHIP\\DatasetTestNapari\\registered_ds_30.tif'
-        viewer.open(path)
-        #viewer.dims.axis_labels = ('c','z','y','x')
-    finally:
+ 
+
 
     
-        napari.run() 
+viewer = napari.Viewer()
+hesim_widget = HexSimAnalysis(viewer)
+
+mode={"choices": ['Translation','Affine','Euclidean','Homography']}
+registration = magicgui(hesim_widget.register_stack, call_button='Register stack', mode=mode)
+selection = magicgui(hesim_widget.select_layer, call_button='Select image layer')
+h5_opener = magicgui(hesim_widget.open_h5_dataset, call_button='Open h5 dataset')
+
+viewer.window.add_dock_widget(h5_opener,
+                              name = 'H5 file selection',
+                              add_vertical_stretch = True)
+
+viewer.window.add_dock_widget(selection,
+                              name = 'Image layer selection',
+                              add_vertical_stretch = True)
+
+viewer.window.add_dock_widget(hesim_widget,
+                              name = 'HexSim analyzer @Polimi',
+                              add_vertical_stretch = True)
+
+segmentaion_obj = Segmentation3D(viewer)
+
+show_props_widget = magicgui(segmentaion_obj.show_props, call_button='Print region properties')
+segment_widget = magicgui(segmentaion_obj.segment,
+                          call_button='Run segmentation',
+                          method={"choices": ['otsu', 'yen', 'li', 'local', 'mean']},)
+segment_widget.thresold.max = 2**16
+
+viewer.window.add_dock_widget(segment_widget,
+                              name = '3D segmentation @Polimi',
+                              add_vertical_stretch = True)
+viewer.window.add_dock_widget(show_props_widget,
+                               name = 'Region prop',
+                               add_vertical_stretch = True)
+
+napari.run()      

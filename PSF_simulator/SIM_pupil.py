@@ -23,13 +23,13 @@ def gaussian_kernel(X,Y, Wx, Wy, X0=0, Y0=0):
     return kern
 
 
-def multiple_gaussians(x, y, waistx, waisty, rhos, thetas, normalized = True):
+def multiple_gaussians(x, y, waistx, waisty, rhos, amps, thetas, normalized = True):
 
     #disc = np.zeros((x.shape[0],x.shape[1]), dtype='complex128')
     disc = np.zeros_like(x)
     
-    for rho,theta in zip(rhos,thetas):
-        disc += gaussian_kernel(x, y, waistx, waisty,
+    for rho,theta,amp in zip(rhos,thetas,amps):
+        disc += amp*gaussian_kernel(x, y, waistx, waisty,
                                 rho*np.cos(theta), rho*np.sin(theta))
     
     r = np.sqrt(x**2+y**2) 

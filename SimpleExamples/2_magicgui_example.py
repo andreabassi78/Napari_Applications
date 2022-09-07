@@ -18,7 +18,7 @@ import os
 def my_ui(
     maybe: bool,
     some_int: int,
-    spin_float=3.14159,
+    spin_float: float =3.14159,
     slider_float=4.5,
     string="Text goes here",
     dropdown='first',
