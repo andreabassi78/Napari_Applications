@@ -29,6 +29,6 @@ def my_ui(
     
     return(some_int*3)
     
-my_ui.show()
+my_ui.show(run=True)
 
     
