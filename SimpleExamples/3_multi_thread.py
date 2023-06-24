@@ -15,7 +15,7 @@ def update_layer(image):
                       contrast_limits=(0., 1.),
                       name=f'image_with_{sy}X{sx}_pixels')
 
-@thread_worker #(connect={'returned': update_layer})
+@thread_worker(connect={'returned': update_layer})
 def create_image_point_by_point(N):
     image = np.zeros((N, N))
     for y in range(N):
