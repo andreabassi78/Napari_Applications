@@ -80,17 +80,24 @@ def get_data(groups, folder, sampling_time, pixel_size):
     return all_datasets
 
 
-def save_in_excel(filename_xlsx, GROUPS_list, **kwargs):
-    headers = list(kwargs.keys())
-    values = np.array(list(kwargs.values()))  # consider using np.fromiter
+def save_in_excel(filename_xlsx, x, y, groups, xlabel, ylabel):
+    values = y 
     writer = pd.ExcelWriter(filename_xlsx)
-    for sheet_idx in range(len(GROUPS_list)):
-        table = pd.DataFrame(values[...,sheet_idx],
-                          index = headers
-                           ).transpose()
-        sheet_name = GROUPS_list[sheet_idx][0]
+
+
+    for sheet_idx in range(len(groups)):
+        
+        table = pd.DataFrame(list(zip(x,values[sheet_idx])),
+                           #index = x,
+                           #headers = text
+                           )
+        table.columns =[xlabel, ylabel]
+        sheet_name = groups[sheet_idx]
+        
         table.to_excel(writer, f'{sheet_name}_{sheet_idx}')    
     writer.save()
+
+
 
 
 def compute_power_spectrum(datasets, values_x = 't', values_y = 'raw', normalize= True):
@@ -230,20 +237,23 @@ if __name__== "__main__":
         call_button="Process",
         preprocessing={"choices": ['raw', 'corrected', 'normalized']},
         folder={'mode': 'd'},
+        saving_folder={'mode': 'd'},
     )
     def processing_ui(
         folder=pathlib.Path(FOLDER),
-        gropus='Col-0,aca2-2',
+        groups='Col-0,aca2-2',
         preprocessing='normalized',
         min_length: float =0.0,
         max_length: float =100.0,
         show_preprocessed: bool = False,
         show_lengths: bool = True,
         show_spectrum:bool = True,
-        normalize_spectra: bool = False,  
+        normalize_spectra: bool = False,
+        save_data:bool = False, 
+        saving_folder=pathlib.Path(FOLDER), 
         ):
 
-        groups_list = gropus.split(",")
+        groups_list = groups.split(",")
 
         original_datasets = get_data(groups_list, folder=folder,
                                  sampling_time=3.0, pixel_size=0.65)
@@ -264,17 +274,27 @@ if __name__== "__main__":
                     xlabel='time (s)', ylabel = 'length (\u03BCm)',
                     normalize = False, legend = groups_list)
         
-        if show_spectrum:
-            compute_power_spectrum(mydatasets,values_y = preprocessing, normalize=normalize_spectra)
-            freqs, mean_spectrum, std_spectrum, _num = calculate_means(mydatasets, groups_list,
+        
+        compute_power_spectrum(mydatasets,values_y = preprocessing, normalize=normalize_spectra)
+        freqs, mean_spectrum, std_spectrum, _num = calculate_means(mydatasets, groups_list,
                                         values_x = 'frequencies',
                                         values_y = 'power_spectrum')
+        if show_spectrum:
             plot_data(freqs, mean_spectrum, yerr=std_spectrum, figtype = 'log',
                     title = 'Fourier Spectrum',
                     xlabel='frequency (Hz)', ylabel = 'power spectrum',
                     normalize = False, legend = groups_list,
                     xmin = 0.001,
                     xmax = 0.151)
+        if save_data:
+            save_filename = os.path.join(saving_folder,
+                                         '_vs_'.join(map(str,groups_list))+'.xlsx',
+                                         
+                                         )
+            save_in_excel(save_filename, x = freqs, y = mean_spectrum,
+                          groups = groups_list,
+                          xlabel = 'freqs',
+                          ylabel = 'spectrum')
         
     processing_ui.show(run=True)
     
