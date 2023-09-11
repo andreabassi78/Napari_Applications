@@ -80,18 +80,15 @@ def get_data(groups, folder, sampling_time, pixel_size):
     return all_datasets
 
 
-def save_in_excel(filename_xlsx, x, y, groups, xlabel, ylabel):
-    values = y 
+def save_in_excel(filename_xlsx, x, y, z, groups, xlabel, ylabel, zlabel):
     writer = pd.ExcelWriter(filename_xlsx)
-
-
     for sheet_idx in range(len(groups)):
         
-        table = pd.DataFrame(list(zip(x,values[sheet_idx])),
+        table = pd.DataFrame(list(zip(x, y[sheet_idx], z[sheet_idx])),
                            #index = x,
                            #headers = text
                            )
-        table.columns =[xlabel, ylabel]
+        table.columns =[xlabel, ylabel,zlabel]
         sheet_name = groups[sheet_idx]
         
         table.to_excel(writer, f'{sheet_name}_{sheet_idx}')    
@@ -282,7 +279,8 @@ if __name__== "__main__":
         if show_spectrum:
             plot_data(freqs, mean_spectrum, yerr=std_spectrum, figtype = 'log',
                     title = 'Fourier Spectrum',
-                    xlabel='frequency (Hz)', ylabel = 'power spectrum',
+                    xlabel='frequency (Hz)', 
+                    ylabel = 'power spectrum',
                     normalize = False, legend = groups_list,
                     xmin = 0.001,
                     xmax = 0.151)
@@ -291,10 +289,12 @@ if __name__== "__main__":
                                          '_vs_'.join(map(str,groups_list))+'.xlsx',
                                          
                                          )
-            save_in_excel(save_filename, x = freqs, y = mean_spectrum,
+            save_in_excel(save_filename, 
+                          x = freqs, y = mean_spectrum, z = std_spectrum,
                           groups = groups_list,
                           xlabel = 'freqs',
-                          ylabel = 'spectrum')
+                          ylabel = 'spectrum',
+                          zlabel = 'error')
         
     processing_ui.show(run=True)
     
